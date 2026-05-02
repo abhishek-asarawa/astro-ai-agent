@@ -1,0 +1,63 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+.pycache/
+
+# --- Virtual environments ---
+venv/
+.venv/
+
+# --- Secrets / local env ---
+.env
+.env.local
+
+# --- OS / editors ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- Local vector store (Chroma) ---
+chroma_db/
+*.sqlite3
+*.sqlite
+
+# --- Corpus: track text; ignore OCR scratch and heavy binaries ---
+data/corpus/**/*.png
+data/corpus/**/*.jpg
+data/corpus/**/*.jpeg
+data/corpus/**/*.webp
+data/corpus/**/*.pdf
+ocr_work/
+
+# --- Eval & acceptance outputs (regenerable) ---
+rag_eval_report.json
+career_eval_report.json
+intent_routing_eval_report.json
+intent_eval_report.json
+rag_eval_records/
+eval_records/
+acceptance_logs/
+acceptance_ab_8b/
+acceptance_quick_7b/
+*.log
+
+# --- Large / binary reference material (keep local) ---
+*.pdf
+
+# --- Misc scratch ---
+Untitled

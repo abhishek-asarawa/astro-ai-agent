@@ -1,0 +1,206 @@
+"""Central configuration for the RAG pipeline (Phase 4 v0).
+
+Single source of truth for embedding endpoint, Chroma settings, chunking
+targets, reranker weights, and the entity/intent regex banks used at
+ingest time. Everything tunable lives here so evaluate_rag.py can sweep
+weights without touching pipeline code.
+"""
+
+import re
+
+OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
+EMBED_MODEL = "nomic-embed-text"
+EMBED_DIM = 768
+KEEP_ALIVE = 0
+EMBED_TIMEOUT_S = 60
+
+CHROMA_PATH = "chroma_db"
+CHROMA_COLLECTION = "vedic_corpus"
+
+CHUNK_TARGET_TOKENS = 400
+CHUNK_OVERLAP_TOKENS = 50
+CHUNK_MAX_TOKENS = 600
+MAX_CONTEXT_TOKENS_TOTAL = 1200
+
+ENTITY_WEIGHT = 0.20
+ENTITY_MATCH_CAP = 3
+INTENT_WEIGHT = 0.10
+LENGTH_PENALTY_PER_100 = 0.10
+LENGTH_PENALTY_THRESHOLD = 500
+
+DENSE_TOP_K = 10
+RERANK_TOP_K = 3
+SILVER_TOP_K = 5
+
+SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
+
+
+def estimate_tokens(text):
+    """Cheap token estimate without tiktoken: ~4 chars per token."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+_PLANET_TERMS = [
+    "Sun", "Moon", "Mars", "Mercury", "Jupiter",
+    "Venus", "Saturn", "Rahu", "Ketu",
+]
+
+_SIGN_TERMS = [
+    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
+]
+
+_DIGNITY_TERMS = [
+    "exalted", "exaltation", "debilitated", "debilitation",
+    "own sign", "own house", "own navamsa", "own navamamsha",
+    "combust", "combustion", "retrograde",
+    "friendly", "enemy", "neutral",
+]
+
+_ASPECT_TERMS = ["aspect", "aspected", "conjunct", "conjunction", "conjoined"]
+
+
+def _house_pattern():
+    ords = "1st|2nd|3rd|4th|5th|6th|7th|8th|9th|10th|11th|12th"
+    return re.compile(rf"\b({ords})\s+(?:House|house|Bhava|bhava)\b")
+
+
+def _lord_pattern():
+    ords = "1st|2nd|3rd|4th|5th|6th|7th|8th|9th|10th|11th|12th"
+    return re.compile(rf"\b({ords})\s+Lord\b", re.IGNORECASE)
+
+
+def _ascendant_lord_pattern():
+    return re.compile(r"\bAscendant\s+Lord\b", re.IGNORECASE)
+
+
+def _lagna_pattern():
+    return re.compile(r"\b(Lagna|Ascendant)\b")
+
+
+_HOUSE_RE = _house_pattern()
+_LORD_RE = _lord_pattern()
+_ASC_LORD_RE = _ascendant_lord_pattern()
+_LAGNA_RE = _lagna_pattern()
+
+_PLANET_RE = re.compile(
+    r"\b(" + "|".join(_PLANET_TERMS) + r")\b"
+)
+_SIGN_RE = re.compile(
+    r"\b(" + "|".join(_SIGN_TERMS) + r")\b"
+)
+_DIGNITY_RE = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in _DIGNITY_TERMS) + r")\b",
+    re.IGNORECASE,
+)
+_ASPECT_RE = re.compile(
+    r"\b(" + "|".join(_ASPECT_TERMS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def extract_entities(text):
+    """Return canonical, deduped entity tokens for a chunk.
+
+    Output uses underscores so the |...| delimiter scheme in Chroma
+    metadata stays unambiguous (no whitespace inside tokens).
+    """
+    if not text:
+        return []
+    found = set()
+
+    for m in _PLANET_RE.finditer(text):
+        found.add(m.group(1))
+
+    for m in _SIGN_RE.finditer(text):
+        found.add(m.group(1))
+
+    for m in _HOUSE_RE.finditer(text):
+        found.add(f"{m.group(1)}_house")
+
+    for m in _LORD_RE.finditer(text):
+        found.add(f"{m.group(1).lower()}_lord")
+
+    if _ASC_LORD_RE.search(text):
+        found.add("ascendant_lord")
+
+    if _LAGNA_RE.search(text):
+        found.add("lagna")
+
+    for m in _DIGNITY_RE.finditer(text):
+        token = m.group(1).lower().replace(" ", "_")
+        found.add(token)
+
+    for m in _ASPECT_RE.finditer(text):
+        found.add(m.group(1).lower())
+
+    return sorted(found)
+
+
+INTENT_KEYWORDS = {
+    "career": [
+        "career", "profession", "professional", "work", "works", "employment",
+        "occupation", "livelihood", "deed", "deeds", "duties", "duty",
+        "karma", "rajya", "authority", "position", "office",
+        "business", "trade", "governmental", "royal patronage",
+        "actions", "action",
+    ],
+    "wealth": [
+        "wealth", "wealthy", "money", "finance", "financial", "income",
+        "gain", "gains", "robes", "ornaments", "precious", "prosperity",
+        "affluence", "dhana", "fortune", "fortunes", "rich",
+    ],
+    "health": [
+        "health", "disease", "diseases", "illness", "ulcer", "bruises",
+        "leprosy", "longevity", "ayur", "fear", "ailment", "sick",
+    ],
+    "family": [
+        "family", "marriage", "spouse", "wife", "husband", "children",
+        "child", "putra", "parent", "father", "mother", "brother",
+        "sister", "kin", "kindred", "domestic",
+    ],
+    "general": [
+        "fame", "famous", "name", "honour", "honor", "happiness",
+        "nature", "character", "personality", "life", "outlook",
+    ],
+}
+
+
+def _compile_intent_regex(words):
+    parts = sorted({re.escape(w) for w in words}, key=len, reverse=True)
+    return re.compile(r"\b(" + "|".join(parts) + r")\b", re.IGNORECASE)
+
+
+_INTENT_RE = {
+    intent: _compile_intent_regex(words)
+    for intent, words in INTENT_KEYWORDS.items()
+}
+
+
+def detect_intent_tags(text):
+    """Boolean fan-out: which intents apply to this chunk.
+
+    Returns a dict with `intent_<name>` keys (one per supported intent).
+    Multiple intents can be true. `intent_general` is a permissive
+    catch-all that is also marked true if any other intent fires, so
+    queries with intent='general' can retrieve from the full corpus.
+    """
+    flags = {f"intent_{name}": False for name in SUPPORTED_INTENTS}
+    if not text:
+        return flags
+
+    any_specific = False
+    for intent, regex in _INTENT_RE.items():
+        if intent == "general":
+            continue
+        if regex.search(text):
+            flags[f"intent_{intent}"] = True
+            any_specific = True
+
+    general_regex = _INTENT_RE["general"]
+    if general_regex.search(text) or any_specific:
+        flags["intent_general"] = True
+
+    return flags

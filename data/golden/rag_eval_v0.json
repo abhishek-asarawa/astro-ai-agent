@@ -1,0 +1,118 @@
+[
+  {
+    "case_id": "career_strong_10th_lord",
+    "question": "What are the career effects when the 10th Lord is endowed with strength in his exaltation sign or own sign?",
+    "expected_intent": "career",
+    "chart_context": {
+      "lagna": "Taurus",
+      "saturn": {"sign": "Libra", "dignity": "exalted", "house": 10}
+    },
+    "gold_citations": ["bphs-ch23-v2"],
+    "silver_citations": ["bphs-ch23-v14", "bphs-ch23-v8-10"]
+  },
+  {
+    "case_id": "career_rahu_with_10th_lord_in_8th",
+    "question": "How does Rahu conjoining the 10th Lord in the 8th house affect career and conduct?",
+    "expected_intent": "career",
+    "chart_context": {
+      "lagna": "Aries",
+      "rahu": {"house": 8},
+      "saturn": {"house": 8, "dignity": "conjunct Rahu"}
+    },
+    "gold_citations": ["bphs-ch23-v6"],
+    "silver_citations": ["bphs-ch23-v17", "bphs-ch23-v18"]
+  },
+  {
+    "case_id": "career_jupiter_aspect_karma_yogi",
+    "question": "What combinations make the native a Karma Yogi performing worthy deeds when Jupiter aspects an exalted 10th Lord in an angle or trine?",
+    "expected_intent": "career",
+    "chart_context": {
+      "lagna": "Cancer",
+      "jupiter": {"aspect": "10th Lord", "house": 1},
+      "mars": {"sign": "Capricorn", "dignity": "exalted", "house": 7}
+    },
+    "gold_citations": ["bphs-ch23-v14"],
+    "silver_citations": ["bphs-ch23-v8-10", "bphs-ch23-v15"]
+  },
+  {
+    "case_id": "career_saturn_debilitated_10th",
+    "question": "What if Saturn is debilitated in the 10th house and the Navamsha of the 10th house also has malefic occupation?",
+    "expected_intent": "career",
+    "chart_context": {
+      "lagna": "Cancer",
+      "saturn": {"sign": "Aries", "dignity": "debilitated", "house": 10}
+    },
+    "gold_citations": ["bphs-ch23-v16"],
+    "silver_citations": ["bphs-ch23-v18", "bphs-ch23-v17"]
+  },
+  {
+    "case_id": "career_fame_through_moon_in_10th",
+    "question": "What combinations bring fame through the Moon placed in the 10th house with the Ascendant Lord in an angle?",
+    "expected_intent": "career",
+    "chart_context": {
+      "lagna": "Taurus",
+      "moon": {"house": 10},
+      "venus": {"house": 1, "dignity": "ascendant lord"}
+    },
+    "gold_citations": ["bphs-ch23-v19-21"],
+    "silver_citations": ["bphs-ch23-v2", "bphs-ch23-v15"]
+  },
+  {
+    "case_id": "health_diseases_from_6th_house",
+    "question": "What diseases and bodily ailments are indicated by the 6th House and an afflicted 6th Lord?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Cancer",
+      "jupiter": {"house": 8, "dignity": "weak"}
+    },
+    "gold_citations": ["bphs-ch19-v1"],
+    "silver_citations": ["bphs-ch19-v3-5", "bphs-ch19-v9-12"]
+  },
+  {
+    "case_id": "health_ascendant_lord_with_malefics",
+    "question": "What ailments and diseases arise when the Ascendant Lord Mars or Mercury is in conjunction with Moon, Rahu, Saturn or Sun in their signs?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Aries",
+      "mars": {"sign": "Aries", "house": 1},
+      "saturn": {"sign": "Aries", "house": 1}
+    },
+    "gold_citations": ["bphs-ch19-v6"],
+    "silver_citations": ["bphs-ch19-v7-8", "bphs-ch19-v9-12"]
+  },
+  {
+    "case_id": "health_8th_lord_in_6th_with_moon",
+    "question": "What dangers and illness are predicted when the 8th Lord is in the 6th House, the 12th Lord in the Ascendant, and the Moon is afflicted?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Cancer",
+      "saturn": {"house": 6, "dignity": "8th lord"},
+      "mercury": {"house": 1, "dignity": "12th lord"}
+    },
+    "gold_citations": ["bphs-ch19-v20-22"],
+    "silver_citations": ["bphs-ch19-v23-25", "bphs-ch19-v13-19"]
+  },
+  {
+    "case_id": "wealth_11th_lord_in_own_or_angle",
+    "question": "What gains and wealth does the native receive when the 11th Lord is in his own house, an angle, a trine, or in his exaltation sign?",
+    "expected_intent": "wealth",
+    "chart_context": {
+      "lagna": "Aries",
+      "saturn": {"sign": "Aquarius", "house": 11, "dignity": "own sign"}
+    },
+    "gold_citations": ["bphs-ch24-v2"],
+    "silver_citations": ["bphs-ch24-v8", "bphs-ch24-v4"]
+  },
+  {
+    "case_id": "wealth_11th_lord_in_2nd_house",
+    "question": "What is the wealth outlook when the 11th Lord is placed in the 2nd House of wealth and the 2nd Lord is in conjunction with Jupiter?",
+    "expected_intent": "wealth",
+    "chart_context": {
+      "lagna": "Aries",
+      "saturn": {"sign": "Taurus", "house": 2, "dignity": "11th lord"},
+      "jupiter": {"house": 2}
+    },
+    "gold_citations": ["bphs-ch24-v3"],
+    "silver_citations": ["bphs-ch24-v9", "bphs-ch24-v4"]
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "record_id": "rag_v0_20260427_145833",
+      "created_at": "2026-04-27T14:58:33Z",
+      "eval_type": "rag_v0",
+      "summary": {
+        "eval_type": "rag_v0",
+        "cases": 10,
+        "embed_model": "nomic-embed-text",
+        "rag_recall_at_3_gold": 0.9,
+        "rag_recall_at_5_silver": 0.9,
+        "rag_heuristic_delta": 0.3,
+        "dense_top_k": 10,
+        "rerank_top_k": 3,
+        "reranker_weights": {
+          "entity_weight": 0.2,
+          "entity_match_cap": 3,
+          "intent_weight": 0.1,
+          "length_penalty_per_100": 0.1,
+          "length_penalty_threshold": 500
+        }
+      },
+      "rank_score": 0.9,
+      "command_config": {
+        "output_path": "rag_eval_report.json"
+      },
+      "report_path": "rag_eval_records/rag_v0_20260427_145833.json"
+    }
+  ]
+}
