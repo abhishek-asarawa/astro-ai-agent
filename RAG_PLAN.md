@@ -9,15 +9,18 @@
 ## Status snapshot
 
 - **Phase**: 4 v0 (retrieval-only) — **DONE**
-- **Next phase**: PR2 (UI sources panel in `app.py`) — PENDING
-- **Last eval**: `rag_v0_20260427_145833` (see `rag_eval_history.json`)
+- **PR1** (RAG in LLM prompt + CLI) — **DONE**
+- **PR2** (Streamlit sources + RAG toggle) — **DONE** (2026-05-02)
+- **Career generation eval** (`evaluate_career.py`): **embedding grounding + optional LLM judge + `--retention-mode {legacy,rag}`** — **DONE**
+- **Last retrieval-only eval**: `rag_v0_20260427_145833` (see `rag_eval_history.json`)
   - `rag_recall_at_3_gold = 0.90` (target ≥ 0.60) ✅
   - `rag_recall_at_5_silver = 0.90` (target ≥ 0.80) ✅
   - `rag_heuristic_delta = +0.30` (target > 0) ✅
+- **Last career RAG baseline (rag retention)**: first accepted record with judge + grounding, e.g. `career_20260502_114813` in `eval_records/` (see `eval_history.json`; summary includes `rag_judge_grounding_avg`, `rag_grounding_max_sim_avg`, `retention_mode: rag`)
 - **Corpus**: 3 chapters / 44 chunks in `chroma_db/` (BPHS, Sharma translation)
+- **Next focus** (suggested): Tier 2 backlog (BM25 hybrid, more chapters, OCR fixes) or extend LLM-judge to `evaluate_rag.py` golden cases
 
-If any metric drops below threshold, the smart-retention guardrail in
-`evaluate_rag.py::passes_guardrails` will reject the run automatically.
+**Guardrails:** `evaluate_rag.py` retention uses retrieval metrics only. **`evaluate_career.py`** can use **`--retention-mode legacy`** (enriched keyword/template, older behavior) or **`--retention-mode rag`** (lexicographic composite: judge score → max chunk similarity → citations → RAG template). Keyword averages alone are a weak signal for generation quality; prefer grounding + judge for RAG regressions.
 
 ---
 
@@ -33,6 +36,11 @@ If any metric drops below threshold, the smart-retention guardrail in
 | `chroma_db/` | Persistent vector store (cosine space, 768-dim) | — |
 | `rag_eval_history.json` | Accepted-runs index (max 3 records) | — |
 | `rag_eval_records/` | Per-run report snapshots | — |
+| `evaluate_career.py` | Baseline vs enriched vs `rag_enriched`; optional embedding grounding + LLM judge; smart retention (`legacy` or `rag`) | `evaluate()`, CLI |
+| `eval_history.json` | Career eval accepted-runs index (max 3) | — |
+| `eval_records/` | Per-run career report snapshots | — |
+| `run_pr1_acceptance_watch.py` | PR1 smoke + `evaluate_career --rag` with judge + rag retention checks | CLI |
+| `app.py` | Streamlit UI: per-query RAG toggle, Sources expander, post-stream ref strip | — |
 
 ---
 
@@ -66,16 +74,20 @@ This phase is now complete. `rag_search.search()` is consumed by generation via 
 | ✅ Post-generation strip of unknown `[ref:...]` tags | `astro_engine.py` | Applied in non-stream response path with strip stats for stream path |
 | ✅ Update `evaluate_career.py` to compare `rag_enriched` mode | `evaluate_career.py` | Added behind `--rag` flag |
 | ✅ README: add "Phase 4 PR1" usage | `README.md` | Added PR1 subsection under Phase 4 |
+| ✅ Stronger `CitationRules` in RAG block (Evidence bullets must cite refs) | `astro_engine.py` | Improves citation adherence in eval |
+| ✅ Grounding + judge + rag retention mode | `evaluate_career.py` | See commands below |
+| ✅ Acceptance watch: judge + grounding thresholds | `run_pr1_acceptance_watch.py` | Invokes `evaluate_career` with `--retention-mode rag --judge-model llama3.2:3b` |
 
-**Acceptance for PR1**: `evaluate_career.py` shows `rag_enriched_keyword_avg ≥ enriched_keyword_avg` on the existing career test set, and a manual eyeball confirms `[ref:...]` tags appear in 5/5 sampled responses with no fabricated tags.
+**Acceptance for PR1 (recommended):** use **`evaluate_career.py --rag --retention-mode rag --judge-model llama3.2:3b`** and confirm `rag_judge_grounding_avg` (1–5) and `rag_grounding_max_sim_avg` (cosine vs retrieved chunks) meet your bar; `rag_enriched_citation_avg > 0`. Keyword delta vs enriched is optional smoke only.
 
-### PR2 — UI sources panel ⏳ PENDING
+### PR2 — UI sources panel ✅ DONE
 
 | Task | File | Notes |
 | --- | --- | --- |
-| Show retrieved chunks in a Streamlit "Sources" expander | `app.py` | Group by `ref_id`, show similarity + matched entities |
-| Click-to-expand chunk text | `app.py` | Useful for verifying citations |
-| Toggle to disable RAG per-query | `app.py` | Helpful for A/B comparison |
+| ✅ Show retrieved chunks in a Streamlit "Sources" expander | `app.py` | Per chunk: `ref_id`, similarity, matched entities |
+| ✅ Click-to-expand chunk text | `app.py` | Nested expanders per source |
+| ✅ Toggle to disable RAG per-query | `app.py` | Checkbox; uses `build_rag_enriched_prompt` when on |
+| ✅ Strip unknown `[ref:...]` after stream | `app.py` | Uses `_strip_unknown_refs` with allowed set from bundle |
 
 ### Backlog — quality and depth (Tier 2)
 
@@ -92,7 +104,7 @@ This phase is now complete. `rag_search.search()` is consumed by generation via 
 
 | Task | File(s) | Effort | Notes |
 | --- | --- | --- | --- |
-| LLM-as-judge faithfulness metric | `evaluate_rag.py` (post-PR2) | M | Use `llama3.2:3b` to score chunk-grounding |
+| LLM-as-judge faithfulness metric | `evaluate_rag.py` | M | **Partial:** `evaluate_career.py` already runs `llama3.2:3b` (or `--judge-model`) on RAG answers vs retrieved sources; extend to golden RAG eval if desired |
 | Cross-encoder reranker (replace heuristic) | `rag_search.py::_rerank` | L | Needs ~1 GB free RAM; keep heuristic as fallback |
 | Embedding cache for incremental re-ingest | `knowledge_builder.py` | S | Already partially solved by sha256 ID skip |
 | Multi-hop / query decomposition | `rag_search.py` | L | For "compare X vs Y" style questions |
@@ -149,6 +161,9 @@ Two open cases above are documented under "Known limitations".
 | Verse-head regex caps at 2 digits (`\d{1,2}`) | Avoids false-matching "5000 Nishkas" etc. mid-paragraph | 2026-04-27 |
 | Verse-head regex accepts `1/2` markers | Sharma translation uses Sanskrit half-verse markers (`7-8 1/2 If…`) | 2026-04-27 |
 | Strip unknown `[ref:...]` tags post-generation while preserving stream UX | Keep stream UX responsive while ensuring evaluator/non-stream consumers only get validated citations | 2026-04-27 |
+| **`evaluate_career.py` retention: `legacy` vs `rag`** | `legacy` = enriched keyword/template (noisy for LLMs). `rag` = lexicographic rank on judge + embedding max-sim to chunks + citations + RAG template; only compares to history rows that already have grounding/judge fields | 2026-05-02 |
+| Embedding grounding for answers | Reuse `rag_search.embed_query` + cosine vs each retrieved chunk; report max/mean sim in eval summary | 2026-05-02 |
+| PR2 Streamlit | RAG default-on checkbox + Sources expander + ref strip on final streamed text | 2026-05-02 |
 
 ---
 
@@ -172,6 +187,19 @@ python evaluate_rag.py \
 ```
 
 Add `--no-retention` to skip writing to history (useful while iterating).
+
+### Career eval (baseline / enriched / RAG + grounding + judge)
+```bash
+source venv/bin/activate
+# Recommended: RAG metrics + embedding grounding + small judge; rag-style history retention
+python evaluate_career.py --rag --runs 3 --workers 1 \
+  --retention-mode rag \
+  --judge-model llama3.2:3b \
+  --output career_eval_report.json \
+  --history eval_history.json
+```
+- **`--no-grounding`**: skip `nomic-embed-text` similarity vs chunks (faster; weaker `--retention-mode rag`).
+- **`--retention-mode legacy`**: history compares `enriched_keyword_avg` / template (older behavior).
 
 ### Inspect what's in the index
 ```bash
@@ -224,12 +252,14 @@ Re-run `evaluate_rag.py` after any tuning to verify guardrails still pass.
 - "How are verses parsed?" → `knowledge_builder.py::VERSE_HEAD_RE` and `_split_verses`
 - "What does the golden file look like?" → `data/golden/rag_eval_v0.json`
 - "How does smart retention work?" → `evaluate_rag.py::maybe_save_result`
+- "Career RAG grounding / judge / retention?" → `evaluate_career.py` (`score_grounding_embedding()`, `run_grounding_judge()`, `passes_guardrails()`, `select_global_baseline()`)
 
 ---
 
 ## When you finish a meaningful change
 
-1. Run `python evaluate_rag.py` (with retention) to attempt history acceptance.
-2. If accepted, the new record is appended to `rag_eval_history.json`. If rejected, fix or document why before continuing.
-3. Update this file's **Status snapshot** + **Phase tracker** sections.
-4. If a new decision was made, add a row to **Decisions log** with date and rationale.
+1. Run `python evaluate_rag.py` (with retention) to attempt history acceptance for **retrieval-only** quality.
+2. If you changed **generation + RAG**, run `evaluate_career.py --rag` with **`--retention-mode rag`** and (recommended) **`--judge-model ...`**; check `career_eval_report.json` and `eval_history.json`.
+3. If accepted, the new record is appended to the relevant history file. If rejected, fix or document why before continuing.
+4. Update this file's **Status snapshot** + **Phase tracker** sections.
+5. If a new decision was made, add a row to **Decisions log** with date and rationale.
