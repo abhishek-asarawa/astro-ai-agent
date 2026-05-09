@@ -6,16 +6,70 @@ SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
 
 INTENT_KEYWORDS = {
     "career": [
-        "career", "job", "profession", "work", "promotion", "growth", "role", "employment",
+        "career",
+        "job",
+        "profession",
+        "work",
+        "promotion",
+        "growth",
+        "role",
+        "employment",
+        # BPHS-style / 10th-house wording (Ch. 23 etc.); substring matches e.g. "10th Lord"
+        "10th lord",
+        "tenth lord",
+        "10th house",
+        "tenth house",
+        "10th",
+        "tenth",
+        "karma yogi",
+        "livelihood",
+        "fame",
+        "occupation",
+        "business",
+        "vocation",
     ],
     "health": [
-        "health", "disease", "illness", "medical", "fitness", "injury", "wellness", "recovery",
+        "health",
+        "disease",
+        "diseases",
+        "illness",
+        "ailment",
+        "ailments",
+        "medical",
+        "fitness",
+        "injury",
+        "wellness",
+        "recovery",
+        "longevity",
+        "long life",
+        "lifespan",
+        "8th lord",
+        "8th house",
+        "eighth house",
+        "kendra",
+        "afflicted",
     ],
     "wealth": [
         "wealth", "money", "finance", "income", "salary", "investment", "savings", "property",
     ],
     "family": [
-        "family", "marriage", "spouse", "relationship", "parents", "children", "home", "domestic",
+        "family",
+        "marriage",
+        "spouse",
+        "relationship",
+        "parents",
+        "father",
+        "mother",
+        "children",
+        "home",
+        "domestic",
+        # BPHS Ch. 22 / 9th-house wording (fortune, dharma, parent from 9th)
+        "9th lord",
+        "ninth lord",
+        "9th house",
+        "ninth house",
+        "fortunes",
+        "pilgrimage",
     ],
     "general": [
         "overall", "general", "life", "future", "outlook", "summary", "holistic",
@@ -81,7 +135,7 @@ def _extract_intent_from_text(text):
     return None
 
 
-def _classify_intent_with_llm(question, model_name=None, timeout_s=45):
+def _classify_intent_with_llm(question, model_name=None, timeout_s=45, num_ctx=None):
     classifier_prompt = (
         "You classify user astrology questions into one intent.\n"
         "Allowed intents: career, health, wealth, family, general.\n"
@@ -96,11 +150,12 @@ def _classify_intent_with_llm(question, model_name=None, timeout_s=45):
         temperature=0.0,
         timeout_s=timeout_s,
         model_name=model_name,
+        num_ctx=num_ctx,
     )
     return _extract_intent_from_text(text)
 
 
-def detect_intent(question, model_name=None, timeout_s=45):
+def detect_intent(question, model_name=None, timeout_s=45, num_ctx=None):
     """Hybrid intent detection: rules first, LLM fallback on ambiguity."""
     scores = _rule_scores(question)
     best = _best_rule_intent(scores)
@@ -116,6 +171,7 @@ def detect_intent(question, model_name=None, timeout_s=45):
         question=question,
         model_name=model_name,
         timeout_s=timeout_s,
+        num_ctx=num_ctx,
     )
     if llm_intent in SUPPORTED_INTENTS:
         return {

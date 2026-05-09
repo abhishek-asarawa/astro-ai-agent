@@ -1,7 +1,11 @@
 """RAG retrieval evaluation harness (Phase 4 v0).
 
 Reads a golden dataset of (question, gold_citations, silver_citations)
-cases, runs each through `rag_search.search`, and scores three metrics:
+cases, runs each through `rag_search.search_for_eval`, and scores three metrics.
+
+By default the retriever intent matches production: `intent_router.detect_intent(question)`.
+Pass ``golden_intent=True`` (CLI: ``--golden-intent``) to use the golden file's
+``expected_intent`` only and isolate the retriever from routing.
 
 - `rag_recall_at_3_gold`: fraction of cases where any gold ref_id is in
   the post-rerank top-3.
@@ -24,6 +28,8 @@ from pathlib import Path
 from statistics import mean
 
 import rag_config as cfg
+from astro_engine import resolve_ollama_config
+from intent_router import detect_intent
 from rag_search import search_for_eval
 
 
@@ -71,16 +77,46 @@ def _heuristic_delta_for_case(gold_refs, pre_order, post_order, dense_top_k):
     return round(mean(deltas), 3)
 
 
-def evaluate_case(case, db_path):
+def _compact_intent_detection(info):
+    """Serialize detect_intent() for JSON (rule_scores keys are str-safe)."""
+    if not info:
+        return None
+    out = {
+        "intent": info.get("intent"),
+        "method": info.get("method"),
+        "confidence": info.get("confidence"),
+    }
+    rs = info.get("rule_scores")
+    if isinstance(rs, dict):
+        out["rule_scores"] = rs
+    return out
+
+
+def evaluate_case(case, db_path, *, golden_intent, intent_model, intent_timeout_s, intent_num_ctx):
     question = case["question"]
-    intent = case.get("expected_intent", "general")
+    expected_intent = case.get("expected_intent", "general")
     chart_facts = case.get("chart_context")
     gold_refs = case.get("gold_citations", []) or []
     silver_refs = case.get("silver_citations", []) or []
 
+    intent_detection = None
+    intent_matches_golden = None
+    if golden_intent:
+        used_intent = expected_intent
+    else:
+        info = detect_intent(
+            question,
+            model_name=intent_model,
+            timeout_s=intent_timeout_s,
+            num_ctx=intent_num_ctx,
+        )
+        intent_detection = _compact_intent_detection(info)
+        used_intent = (info or {}).get("intent", "general")
+        intent_matches_golden = used_intent == expected_intent
+
     chunks, pre_order = search_for_eval(
         question=question,
-        intent=intent,
+        intent=used_intent,
         chart_facts=chart_facts,
         db_path=db_path,
     )
@@ -112,10 +148,13 @@ def evaluate_case(case, db_path):
         for c in chunks[:cfg.SILVER_TOP_K]
     ]
 
-    return {
+    row = {
         "case_id": case.get("case_id", "unknown"),
         "question": question,
-        "expected_intent": intent,
+        "expected_intent": expected_intent,
+        "used_intent": used_intent,
+        "intent_detection": intent_detection,
+        "intent_matches_golden": intent_matches_golden,
         "gold_citations": gold_refs,
         "silver_citations": silver_refs,
         "gold_in_top_3": gold_in_top_3,
@@ -124,14 +163,33 @@ def evaluate_case(case, db_path):
         "post_rerank_top_5": top_5_view,
         "pre_rerank_top_5": pre_order[:cfg.SILVER_TOP_K],
     }
+    return row
 
 
-def evaluate(golden_path, db_path):
+def evaluate(
+    golden_path,
+    db_path,
+    *,
+    golden_intent=False,
+    intent_model=None,
+    intent_timeout_s=45,
+    intent_num_ctx=None,
+):
     cases = load_golden(golden_path)
     if not cases:
         return {"summary": {}, "details": []}
 
-    details = [evaluate_case(case, db_path) for case in cases]
+    details = [
+        evaluate_case(
+            case,
+            db_path,
+            golden_intent=golden_intent,
+            intent_model=intent_model,
+            intent_timeout_s=intent_timeout_s,
+            intent_num_ctx=intent_num_ctx,
+        )
+        for case in cases
+    ]
 
     n = len(details)
     recall_3_gold = sum(1 for d in details if d["gold_in_top_3"]) / n
@@ -139,10 +197,23 @@ def evaluate(golden_path, db_path):
     deltas = [d["heuristic_delta"] for d in details if d["heuristic_delta"] is not None]
     delta_avg = round(mean(deltas), 3) if deltas else None
 
+    if golden_intent:
+        intent_routing_agreement = None
+    else:
+        matches = [d for d in details if d["intent_matches_golden"] is not None]
+        intent_routing_agreement = (
+            round(sum(1 for d in matches if d["intent_matches_golden"]) / len(matches), 3)
+            if matches
+            else None
+        )
+
     summary = {
         "eval_type": EVAL_TYPE,
         "cases": n,
         "embed_model": cfg.EMBED_MODEL,
+        "golden_intent": golden_intent,
+        "intent_num_ctx": intent_num_ctx,
+        "intent_routing_agreement": intent_routing_agreement,
         "rag_recall_at_3_gold": round(recall_3_gold, 3),
         "rag_recall_at_5_silver": round(recall_5_silver, 3),
         "rag_heuristic_delta": delta_avg,
@@ -151,6 +222,8 @@ def evaluate(golden_path, db_path):
         "reranker_weights": {
             "entity_weight": cfg.ENTITY_WEIGHT,
             "entity_match_cap": cfg.ENTITY_MATCH_CAP,
+            "entity_tail_weight": cfg.ENTITY_TAIL_WEIGHT,
+            "entity_tail_max": cfg.ENTITY_TAIL_MAX,
             "intent_weight": cfg.INTENT_WEIGHT,
             "length_penalty_per_100": cfg.LENGTH_PENALTY_PER_100,
             "length_penalty_threshold": cfg.LENGTH_PENALTY_THRESHOLD,
@@ -314,16 +387,52 @@ def parse_args():
     parser.add_argument("--history", default=DEFAULT_HISTORY_PATH, help="Path to RAG eval history index.")
     parser.add_argument("--db-path", default=cfg.CHROMA_PATH, help="Chroma DB path.")
     parser.add_argument("--no-retention", action="store_true", help="Skip writing to history.")
+    parser.add_argument(
+        "--golden-intent",
+        action="store_true",
+        help="Use golden expected_intent for retrieval (isolates retriever from intent_router). "
+        "Default: production path via intent_router.detect_intent(question).",
+    )
+    parser.add_argument(
+        "--intent-model",
+        default=None,
+        help="Ollama model for intent LLM fallback (default: env ASTRO_MODEL_NAME or astro_engine default).",
+    )
+    parser.add_argument(
+        "--intent-timeout-s",
+        type=int,
+        default=45,
+        help="Timeout for intent_router LLM fallback calls (default: 45).",
+    )
+    parser.add_argument(
+        "--intent-num-ctx",
+        type=int,
+        default=None,
+        help="Ollama num_ctx for intent LLM fallback (default: ASTRO_NUM_CTX env or engine default).",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
+    _, _, intent_num_ctx = resolve_ollama_config(
+        model_name=args.intent_model,
+        timeout_s=None,
+        num_ctx=args.intent_num_ctx,
+    )
     print(
-        f"Evaluating RAG: golden={args.golden} db={args.db_path} embed={cfg.EMBED_MODEL}",
+        f"Evaluating RAG: golden={args.golden} db={args.db_path} embed={cfg.EMBED_MODEL} "
+        f"golden_intent={args.golden_intent} intent_num_ctx={intent_num_ctx}",
         flush=True,
     )
-    report = evaluate(args.golden, args.db_path)
+    report = evaluate(
+        args.golden,
+        args.db_path,
+        golden_intent=args.golden_intent,
+        intent_model=args.intent_model,
+        intent_timeout_s=args.intent_timeout_s,
+        intent_num_ctx=intent_num_ctx,
+    )
     Path(args.output).write_text(json.dumps(report, indent=2), encoding="utf-8")
     if not args.no_retention:
         decision = maybe_save_result(report, args.output, args.history)

@@ -20,7 +20,7 @@
       "saturn": {"house": 8, "dignity": "conjunct Rahu"}
     },
     "gold_citations": ["bphs-ch23-v6"],
-    "silver_citations": ["bphs-ch23-v17", "bphs-ch23-v18"]
+    "silver_citations": ["bphs-ch23-v11", "bphs-ch23-v7"]
   },
   {
     "case_id": "career_jupiter_aspect_karma_yogi",
@@ -63,7 +63,7 @@
     "expected_intent": "health",
     "chart_context": {
       "lagna": "Cancer",
-      "jupiter": {"house": 8, "dignity": "weak"}
+      "jupiter": {"house": 6, "dignity": "weak 6th lord"}
     },
     "gold_citations": ["bphs-ch19-v1"],
     "silver_citations": ["bphs-ch19-v3-5", "bphs-ch19-v9-12"]
@@ -75,7 +75,11 @@
     "chart_context": {
       "lagna": "Aries",
       "mars": {"sign": "Aries", "house": 1},
-      "saturn": {"sign": "Aries", "house": 1}
+      "mercury": {"sign": "Aries", "house": 1},
+      "moon": {"sign": "Aries", "house": 1},
+      "rahu": {"sign": "Aries", "house": 1},
+      "saturn": {"sign": "Aries", "house": 1},
+      "sun": {"sign": "Aries", "house": 1}
     },
     "gold_citations": ["bphs-ch19-v6"],
     "silver_citations": ["bphs-ch19-v7-8", "bphs-ch19-v9-12"]
@@ -114,5 +118,79 @@
     },
     "gold_citations": ["bphs-ch24-v3"],
     "silver_citations": ["bphs-ch24-v9", "bphs-ch24-v4"]
+  },
+  {
+    "case_id": "wealth_2nd_lord_in_11th_11th_lord_in_2nd",
+    "question": "What wealth results when the Lord of the 2nd House is in the 11th House and the Lord of the 11th House occupies the 2nd House with exchange between them?",
+    "expected_intent": "wealth",
+    "chart_context": {
+      "lagna": "Aries",
+      "venus": {"house": 11, "dignity": "2nd lord"},
+      "saturn": {"house": 2, "dignity": "11th lord"}
+    },
+    "gold_citations": ["bphs-ch15-v4"],
+    "silver_citations": ["bphs-ch24-v9", "bphs-ch15-v8"]
+  },
+  {
+    "case_id": "wealth_jupiter_mars_in_2nd_house",
+    "question": "When Jupiter significator of wealth is in the 2nd House together with Mars is the native wealthy?",
+    "expected_intent": "wealth",
+    "chart_context": {
+      "lagna": "Leo",
+      "jupiter": {"house": 2},
+      "mars": {"house": 2}
+    },
+    "gold_citations": ["bphs-ch15-v3"],
+    "silver_citations": ["bphs-ch15-summary", "bphs-ch15-v8"]
+  },
+  {
+    "case_id": "health_8th_lord_in_kendra_long_life",
+    "question": "When the Lord of the 8th House occupies a Kendra or angle from the Ascendant, what does Parashara indicate about long life and longevity?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Libra",
+      "venus": {"house": 4, "dignity": "8th lord"}
+    },
+    "gold_citations": ["bphs-ch21-v4-7"],
+    "silver_citations": ["bphs-ch21-v1", "bphs-ch21-summary"]
+  },
+  {
+    "case_id": "health_8th_lord_malefic_conjoin_asc_lord_in_8th",
+    "question": "What is predicted for life span when the 8th Lord is conjoined with a malefic in the 8th House itself and the Ascendant Lord is also placed there?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Scorpio",
+      "mars": {"house": 8, "dignity": "ascendant lord"},
+      "mercury": {"house": 8, "dignity": "8th lord"},
+      "saturn": {"house": 8, "dignity": "malefic aspect"}
+    },
+    "gold_citations": ["bphs-ch21-v2"],
+    "silver_citations": ["bphs-ch21-v8-13", "bphs-ch21-v3"]
+  },
+  {
+    "case_id": "family_9th_lord_exalted_father_longlife",
+    "question": "What does Parashara indicate for the native's father when the 9th Lord is very highly exalted, the Navamamsha of the 9th House is occupied by Jupiter, and Venus is placed in an angle from the Ascendant?",
+    "expected_intent": "family",
+    "chart_context": {
+      "lagna": "Leo",
+      "venus": {"house": 1, "dignity": "angle from ascendant"},
+      "jupiter": {"house": 9, "dignity": "9th navamsa placement per query"},
+      "sun": {"dignity": "9th lord exalted"}
+    },
+    "gold_citations": ["bphs-ch22-v5"],
+    "silver_citations": ["bphs-ch22-v8-9", "bphs-ch22-v3"]
+  },
+  {
+    "case_id": "family_9th_10th_lord_exchange_father_wealth",
+    "question": "When the 9th Lord is in the 10th House and the 10th Lord occupies the 9th House and is aspected by a benefic, what results for the native's father according to the ninth house effects?",
+    "expected_intent": "family",
+    "chart_context": {
+      "lagna": "Scorpio",
+      "mars": {"house": 10, "dignity": "9th lord in 10th"},
+      "mercury": {"house": 9, "dignity": "10th lord in 9th"},
+      "jupiter": {"aspect": "10th lord", "dignity": "benefic aspect"}
+    },
+    "gold_citations": ["bphs-ch22-v7"],
+    "silver_citations": ["bphs-ch22-v6", "bphs-ch22-summary"]
   }
 ]

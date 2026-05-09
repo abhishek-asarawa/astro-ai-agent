@@ -684,6 +684,7 @@ if __name__ == "__main__":
             question=args.question,
             model_name=model_name,
             timeout_s=min(45, timeout_s),
+            num_ctx=num_ctx,
         ).get("intent", "general")
         rag_bundle = build_rag_enriched_prompt(features, args.question, detected_intent)
         prompt = rag_bundle["prompt"]

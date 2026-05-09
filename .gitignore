@@ -19,6 +19,7 @@ coverage.xml
 # --- Virtual environments ---
 venv/
 .venv/
+.pip_target/
 
 # --- Secrets / local env ---
 .env
@@ -36,7 +37,11 @@ chroma_db/
 *.sqlite3
 *.sqlite
 
-# --- Corpus: track text; ignore OCR scratch and heavy binaries ---
+# --- Corpus: local OCR / chapter text (regenerate; do not commit) ---
+data/corpus/bphs_sharma/**/*.txt
+# --- Eval / acceptance run history (regenerable) ---
+eval_history.json
+rag_eval_history.json
 data/corpus/**/*.png
 data/corpus/**/*.jpg
 data/corpus/**/*.jpeg

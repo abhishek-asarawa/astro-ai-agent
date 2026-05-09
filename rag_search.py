@@ -7,16 +7,19 @@ top-k most relevant chunks from the local Chroma index. Strategy:
 1. Multi-query expansion (literal question + chart-derived structural
    query + intent-focused query) to widen recall.
 2. Per-query dense retrieval from Chroma with an intent boolean filter.
-3. Merge and dedupe by `ref_id`, keeping each chunk's best dense rank.
+3. Optional BM25 over the same (filtered) corpus + RRF with dense ranks,
+   then dedupe by `ref_id`, keeping the best similarity slice per ref.
 4. Heuristic rerank using entity overlap + intent match - length penalty.
 5. Return top-k with both pre- and post-rerank ranks so eval_rag can
    compute heuristic_delta.
 """
 
+import re
 from dataclasses import dataclass, field
 
 import chromadb
 import requests
+from rank_bm25 import BM25Okapi
 
 import rag_config as cfg
 
@@ -135,11 +138,29 @@ def _parse_entities_field(entities_field):
     return {tok for tok in entities_field.split("|") if tok}
 
 
+_DIGNITY_ENTITY_ALIASES = (
+    ("debilitated", "debilitation"),
+    ("exalted", "exaltation"),
+)
+
+
+def _expand_dignity_entities(entities):
+    """Align chart wording (debilitated) with ingest tokens (debilitation)."""
+    out = set(entities)
+    for a, b in _DIGNITY_ENTITY_ALIASES:
+        if a in out:
+            out.add(b)
+        if b in out:
+            out.add(a)
+    return out
+
+
 def _query_entities(question, chart_facts):
     text_parts = [question or ""]
     text_parts.append(_summarize_chart_facts(chart_facts))
     combined = " ".join(part for part in text_parts if part)
-    return set(cfg.extract_entities(combined))
+    base = set(cfg.extract_entities(combined))
+    return _expand_dignity_entities(base)
 
 
 def _dense_retrieve(collection, query_embedding, where, n_results):
@@ -169,6 +190,177 @@ def _flatten_chroma_result(result):
             "distance": dist,
         })
     return out
+
+
+def _tokenize_bm25(text):
+    """Alphanumeric tokens for BM25 (English OCR corpus)."""
+    if not text:
+        return []
+    return re.findall(r"[A-Za-z0-9]+", text.lower())
+
+
+def _bm25_expanded_queries(queries, question, chart_facts):
+    """Extra strings for BM25 only (dense path unchanged)."""
+    out = list(queries)
+    base = (question or "").strip()
+    if base and "debilitat" in base.lower():
+        out.append(f"{base} debilitation")
+    if base and any(n in base.lower() for n in ("navamsha", "navamsa")):
+        out.append(f"{base} navamamsha navamsa")
+    structural = _summarize_chart_facts(chart_facts)
+    if structural and "debilitat" in structural.lower():
+        out.append(f"{structural} debilitation")
+    seen = set()
+    deduped = []
+    for q in out:
+        if q not in seen:
+            seen.add(q)
+            deduped.append(q)
+    return deduped
+
+
+def _bm25_max_scores_per_id(queries, tokenized_corpus, ids):
+    """Max BM25 score per Chroma id across expanded queries."""
+    if not tokenized_corpus or not ids:
+        return {}
+    bm25 = BM25Okapi(tokenized_corpus)
+    acc = {cid: 0.0 for cid in ids}
+    for q in queries:
+        tq = _tokenize_bm25(q)
+        if not tq:
+            continue
+        scores = bm25.get_scores(tq)
+        for i, cid in enumerate(ids):
+            acc[cid] = max(acc[cid], float(scores[i]))
+    return acc
+
+
+def _rrf_scores(dense_rank, bm25_rank, ids_union):
+    """Reciprocal rank fusion: higher is better."""
+    k = cfg.RRF_K
+    wd = cfg.RRF_WEIGHT_DENSE
+    ws = cfg.RRF_WEIGHT_SPARSE
+    out = {}
+    for cid in ids_union:
+        s = 0.0
+        if cid in dense_rank:
+            s += wd / (k + dense_rank[cid] + 1)
+        if cid in bm25_rank:
+            s += ws / (k + bm25_rank[cid] + 1)
+        out[cid] = s
+    return out
+
+
+def _filtered_corpus_get(collection, where, fall_back_no_filter):
+    """All documents matching `where`, optionally falling back to full collection."""
+    data = collection.get(where=where, include=["documents", "metadatas"])
+    ids = data.get("ids") or []
+    if not ids and where is not None and fall_back_no_filter:
+        data = collection.get(where=None, include=["documents", "metadatas"])
+        ids = data.get("ids") or []
+    docs = data.get("documents") or []
+    metas = data.get("metadatas") or []
+    return ids, docs, metas
+
+
+def _dense_ranks_from_merged(merged_dense):
+    """Best dense list position per Chroma id (lower rank = better)."""
+    items = sorted(merged_dense.items(), key=lambda x: (x[1]["rank"], x[0]))
+    return {cid: i for i, (cid, _) in enumerate(items)}
+
+
+def _bm25_ranks_from_scores(scores_by_id):
+    """BM25 list position per id (0 = best score)."""
+    ranked = sorted(
+        scores_by_id.keys(),
+        key=lambda cid: (-scores_by_id[cid], cid),
+    )
+    return {cid: i for i, cid in enumerate(ranked)}
+
+
+def _hybrid_fusion_chunks(
+    collection,
+    queries,
+    merged_dense,
+    where,
+    fall_back_no_filter,
+    question,
+    chart_facts,
+):
+    """RRF-order chunks from dense merge + BM25 over filtered corpus."""
+    ids_list, docs_list, metas_list = _filtered_corpus_get(
+        collection, where, fall_back_no_filter
+    )
+    # Dense may use per-query no-filter fallback; include any stray ids in BM25 corpus.
+    if fall_back_no_filter and merged_dense.keys() - set(ids_list or []):
+        ids_list, docs_list, metas_list = _filtered_corpus_get(collection, None, False)
+
+    if not ids_list:
+        return _build_chunks(merged_dense)
+
+    tokenized_corpus = [_tokenize_bm25(d or "") for d in docs_list]
+    tokenized_corpus = [t if t else ["_"] for t in tokenized_corpus]
+
+    bm25_queries = _bm25_expanded_queries(queries, question, chart_facts)
+    bm25_scores = _bm25_max_scores_per_id(bm25_queries, tokenized_corpus, ids_list)
+    bm25_rank = _bm25_ranks_from_scores(bm25_scores)
+    dense_rank = _dense_ranks_from_merged(merged_dense)
+
+    ids_union = set(ids_list) | set(merged_dense.keys())
+    rrf = _rrf_scores(dense_rank, bm25_rank, ids_union)
+    id_order = sorted(ids_union, key=lambda cid: (-rrf[cid], cid))
+
+    return _chunks_from_rrf_order(
+        id_order,
+        merged_dense,
+        ids_list,
+        docs_list,
+        metas_list,
+        bm25_scores,
+    )
+
+
+def _chunks_from_rrf_order(
+    id_order,
+    merged_dense,
+    ids_list,
+    docs_list,
+    metas_list,
+    bm25_scores,
+):
+    """Build RetrievedChunk list in RRF order; dense hits keep real similarity."""
+    by_id = {cid: {"text": d, "metadata": m or {}} for cid, d, m in zip(ids_list, docs_list, metas_list)}
+    max_bm25 = max(bm25_scores.values()) if bm25_scores else 0.0
+    chunks = []
+    for i, cid in enumerate(id_order):
+        if cid in merged_dense:
+            hit = merged_dense[cid]
+            meta = hit["metadata"]
+            distance = float(hit["distance"])
+            similarity = 1.0 - distance
+            text = hit["text"]
+        else:
+            row = by_id.get(cid)
+            if not row:
+                continue
+            meta = row["metadata"]
+            text = row["text"] or ""
+            raw = bm25_scores.get(cid, 0.0)
+            if max_bm25 > 0:
+                similarity = max(cfg.BM25_SIMILARITY_FLOOR, raw / max_bm25)
+            else:
+                similarity = cfg.BM25_SIMILARITY_FLOOR
+            distance = 1.0 - similarity
+        chunk = RetrievedChunk(
+            ref_id=meta.get("ref_id", cid[:12]),
+            text=text,
+            metadata=meta,
+            dense_distance=distance,
+            similarity=similarity,
+        )
+        chunk.pre_rerank_rank = i
+        chunks.append(chunk)
+    return chunks
 
 
 def _merge_results(per_query_hits):
@@ -205,6 +397,37 @@ def _build_chunks(merged):
     return [c for _, c in chunks]
 
 
+def _dedupe_chunks_by_ref_keep_best_dense(chunks):
+    """One rerank candidate per ref_id (best dense similarity).
+
+    Oversize ingest splits share a citation ref_id across multiple rows.
+    Letting them all into the rerank pool can crowd out distinct verses
+    that share entities; the LLM still cites a single ref tag per verse.
+    """
+    if not chunks:
+        return chunks
+    best_by_ref = {}
+    for ch in chunks:
+        rid = ch.ref_id or ""
+        prev = best_by_ref.get(rid)
+        if prev is None:
+            best_by_ref[rid] = ch
+            continue
+        if ch.similarity > prev.similarity:
+            best_by_ref[rid] = ch
+        elif ch.similarity == prev.similarity:
+            tc = ch.metadata.get("token_count") or 0
+            ptc = prev.metadata.get("token_count") or 0
+            if tc < ptc or (tc == ptc and ch.pre_rerank_rank < prev.pre_rerank_rank):
+                best_by_ref[rid] = ch
+
+    out = list(best_by_ref.values())
+    out.sort(key=lambda c: c.pre_rerank_rank)
+    for i, ch in enumerate(out):
+        ch.pre_rerank_rank = i
+    return out
+
+
 def _rerank(chunks, query_entities, intent):
     intent_key = f"intent_{intent}" if intent in cfg.SUPPORTED_INTENTS else None
     for chunk in chunks:
@@ -224,9 +447,15 @@ def _rerank(chunks, query_entities, intent):
             intent_match = 1.0
 
         capped_match_count = min(len(matched), cfg.ENTITY_MATCH_CAP)
+        tail_matches = min(
+            max(0, len(matched) - cfg.ENTITY_MATCH_CAP),
+            cfg.ENTITY_TAIL_MAX,
+        )
+        tail_w = cfg.ENTITY_TAIL_WEIGHT
         chunk.score = (
             chunk.similarity
             + cfg.ENTITY_WEIGHT * capped_match_count
+            + tail_w * tail_matches
             + cfg.INTENT_WEIGHT * intent_match
             - length_penalty
         )
@@ -293,7 +522,20 @@ def search(
     if not merged:
         return []
 
-    chunks = _build_chunks(merged)
+    if cfg.HYBRID_BM25_ENABLED:
+        chunks = _hybrid_fusion_chunks(
+            collection,
+            queries,
+            merged,
+            where,
+            fall_back_no_filter,
+            question,
+            chart_facts,
+        )
+    else:
+        chunks = _build_chunks(merged)
+
+    chunks = _dedupe_chunks_by_ref_keep_best_dense(chunks)
     query_entities = _query_entities(question, chart_facts)
     chunks = _rerank(chunks, query_entities, intent)
     return chunks[:top_k]

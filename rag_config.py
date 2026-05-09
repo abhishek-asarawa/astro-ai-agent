@@ -20,10 +20,16 @@ CHROMA_COLLECTION = "vedic_corpus"
 CHUNK_TARGET_TOKENS = 400
 CHUNK_OVERLAP_TOKENS = 50
 CHUNK_MAX_TOKENS = 600
+# Verse (or chapter) bodies over this token estimate are split at ingest into
+# multiple Chroma rows sharing the same ref_id (see knowledge_builder).
 MAX_CONTEXT_TOKENS_TOTAL = 1200
 
 ENTITY_WEIGHT = 0.20
 ENTITY_MATCH_CAP = 3
+# Small bonus for entity overlaps beyond ENTITY_MATCH_CAP (capped), so chunks
+# that match more query entities can edge out similar-density neighbors.
+ENTITY_TAIL_WEIGHT = 0.03
+ENTITY_TAIL_MAX = 3
 INTENT_WEIGHT = 0.10
 LENGTH_PENALTY_PER_100 = 0.10
 LENGTH_PENALTY_THRESHOLD = 500
@@ -31,6 +37,16 @@ LENGTH_PENALTY_THRESHOLD = 500
 DENSE_TOP_K = 10
 RERANK_TOP_K = 3
 SILVER_TOP_K = 5
+
+# Hybrid dense + BM25 (RRF). Corpus is small; BM25 runs over filtered `get()`.
+HYBRID_BM25_ENABLED = True
+RRF_K = 60.0
+# High dense weight keeps pre-rerank order near pure dense (good heuristic_delta) while
+# BM25 still nudges scores for lexical gaps and surfaces extra ids at the tail.
+RRF_WEIGHT_DENSE = 12.0
+RRF_WEIGHT_SPARSE = 1.0
+# Minimum cosine-like similarity for BM25-only hits before rerank (dense is ~0–1).
+BM25_SIMILARITY_FLOOR = 0.05
 
 SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
 
@@ -154,7 +170,9 @@ INTENT_KEYWORDS = {
     ],
     "health": [
         "health", "disease", "diseases", "illness", "ulcer", "bruises",
-        "leprosy", "longevity", "ayur", "fear", "ailment", "sick",
+        "leprosy", "longevity", "long life", "lifespan", "ayur", "fear",
+        "ailment", "ailments", "sick", "8th lord", "8th house", "eighth house",
+        "kendra", "afflicted",
     ],
     "family": [
         "family", "marriage", "spouse", "wife", "husband", "children",

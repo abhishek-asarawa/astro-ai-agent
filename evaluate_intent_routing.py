@@ -82,12 +82,13 @@ def score_template_adherence(response, expected_intent):
     return hits / len(markers)
 
 
-def run_one(case, model_name, timeout_s):
+def run_one(case, model_name, timeout_s, num_ctx):
     birth = case["birth"]
     intent_info = detect_intent(
         question=case["question"],
         model_name=model_name,
         timeout_s=min(45, timeout_s),
+        num_ctx=num_ctx,
     )
     detected_intent = intent_info.get("intent", "general")
     features = build_chart_features(
@@ -104,6 +105,7 @@ def run_one(case, model_name, timeout_s):
         temperature=0.2,
         timeout_s=timeout_s,
         model_name=model_name,
+        num_ctx=num_ctx,
     )
     intent_match = detected_intent == case["expected_intent"]
     keyword_score = score_keyword_coverage(response, case["expected_keywords"])
@@ -122,10 +124,10 @@ def run_one(case, model_name, timeout_s):
     }
 
 
-def evaluate(cases, model_name, timeout_s, workers):
+def evaluate(cases, model_name, timeout_s, num_ctx, workers):
     rows = []
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
-        futures = [executor.submit(run_one, case, model_name, timeout_s) for case in cases]
+        futures = [executor.submit(run_one, case, model_name, timeout_s, num_ctx) for case in cases]
         for idx, future in enumerate(as_completed(futures), start=1):
             print(f"[{idx}/{len(futures)}] completed", flush=True)
             try:
@@ -155,6 +157,7 @@ def evaluate(cases, model_name, timeout_s, workers):
         "cases": len(rows),
         "model_name": model_name,
         "timeout_s": timeout_s,
+        "num_ctx": num_ctx,
         "workers": max(1, workers),
         "intent_accuracy": round(intent_accuracy, 3),
         "keyword_avg": round(keyword_avg, 3),
@@ -190,22 +193,34 @@ def parse_args():
         default=2,
         help="Parallel case evaluations to run at once (default: 2).",
     )
+    parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=None,
+        help="Ollama num_ctx. Defaults to ASTRO_NUM_CTX env or engine default.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    model_name, timeout_s = resolve_ollama_config(model_name=args.model, timeout_s=args.timeout)
+    model_name, timeout_s, num_ctx = resolve_ollama_config(
+        model_name=args.model,
+        timeout_s=args.timeout,
+        num_ctx=args.num_ctx,
+    )
     print(
-        f"Using model={model_name} timeout_s={timeout_s} workers={max(1, args.workers)} "
+        f"Using model={model_name} timeout_s={timeout_s} num_ctx={num_ctx} workers={max(1, args.workers)} "
         f"(ASTRO_MODEL_NAME={os.getenv('ASTRO_MODEL_NAME', '') or 'unset'}, "
-        f"ASTRO_OLLAMA_TIMEOUT_S={os.getenv('ASTRO_OLLAMA_TIMEOUT_S', '') or 'unset'})",
+        f"ASTRO_OLLAMA_TIMEOUT_S={os.getenv('ASTRO_OLLAMA_TIMEOUT_S', '') or 'unset'}, "
+        f"ASTRO_NUM_CTX={os.getenv('ASTRO_NUM_CTX', '') or 'unset'})",
         flush=True,
     )
     report = evaluate(
         DEFAULT_ROUTING_CASES,
         model_name=model_name,
         timeout_s=timeout_s,
+        num_ctx=num_ctx,
         workers=max(1, args.workers),
     )
     with open(args.output, "w", encoding="utf-8") as fp:

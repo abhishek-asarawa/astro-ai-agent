@@ -13,11 +13,13 @@ Usage:
         --book bphs \
         --translator sharma \
         --chapter 23
+
+    After changing how verses are split, re-ingest with --replace-chapter so stale
+    sha256 ids for the same ref_id are removed before new rows are added.
 """
 
 import argparse
 import hashlib
-import json
 import re
 import sys
 from collections import Counter
@@ -28,15 +30,20 @@ import requests
 
 import rag_config as cfg
 
+# Ranges may omit the dot (e.g. "20 1/2-22 If"); single sloka numbers must use
+# a period so prose like "7 or the Uttarardha" does not start a false verse.
 VERSE_HEAD_RE = re.compile(
-    r"^(\d{1,2})(?:\s+1/2)?(?:-(\d{1,2})(?:\s+1/2)?)?\.?\s+(?=[A-Za-z])",
-    re.MULTILINE,
+    r"(?m)^(?:"
+    r"(\d{1,2})(?:\s+1/2)?-(\d{1,2})(?:\s+1/2)?\.?\s+"
+    r"|(\d{1,2})(?:\s+1/2)\.\s+"
+    r"|(\d{1,2})\.\s+"
+    r")(?=[A-Za-z])",
 )
 
 
 def _strip_known_running_headers(text):
     text = re.sub(
-        r"(?im)^\s*\d+\s+Effects of the [A-Za-z]+ House\s*$",
+        r"(?im)^\s*\d+\s+Effects of [Tt]he [A-Za-z]+ House\s*$",
         "",
         text,
     )
@@ -108,8 +115,12 @@ def _split_verses(text):
         yield (0, 0, prelude)
 
     for idx, m in enumerate(matches):
-        start_num = int(m.group(1))
-        end_num = int(m.group(2)) if m.group(2) else start_num
+        if m.group(1) is not None:
+            start_num, end_num = int(m.group(1)), int(m.group(2))
+        elif m.group(3) is not None:
+            start_num = end_num = int(m.group(3))
+        else:
+            start_num = end_num = int(m.group(4))
         body_start = m.start()
         body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
         body = text[body_start:body_end].strip()
@@ -129,6 +140,113 @@ def _build_chapter_summary(book, chapter, prelude, first_verse_text):
 
 def _hash_id(text):
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+
+
+def _rough_sentences(text):
+    """Split English OCR prose on paragraph breaks and sentence-ending punctuation."""
+    sentences = []
+    for para in re.split(r"\n\s*\n", (text or "").strip()):
+        para = para.strip()
+        if not para:
+            continue
+        for chunk in re.split(r"(?<=[.!?])\s+", para):
+            chunk = chunk.strip()
+            if chunk:
+                sentences.append(chunk)
+    return sentences if sentences else ([text.strip()] if text and text.strip() else [])
+
+
+def _hard_split_words(text, max_tokens, estimate_fn):
+    """Last resort: pack whitespace-delimited words under max_tokens each."""
+    words = (text or "").split()
+    if not words:
+        return [text.strip()] if text and text.strip() else []
+    out, buf = [], []
+    for w in words:
+        trial = " ".join(buf + [w])
+        if buf and estimate_fn(trial) > max_tokens:
+            out.append(" ".join(buf))
+            buf = [w]
+        else:
+            buf.append(w)
+    if buf:
+        out.append(" ".join(buf))
+    return out
+
+
+def _pack_under_token_budget(sentences, pack_target, estimate_fn):
+    """Greedy pack of sentences into segments each <= pack_target (estimated tokens)."""
+    if not sentences:
+        return []
+    out, buf = [], []
+    for s in sentences:
+        pieces = (
+            _hard_split_words(s, pack_target, estimate_fn)
+            if estimate_fn(s) > pack_target
+            else [s]
+        )
+        for piece in pieces:
+            trial = " ".join(buf + [piece]) if buf else piece
+            if buf and estimate_fn(trial) > pack_target:
+                out.append(" ".join(buf).strip())
+                buf = [piece]
+            else:
+                buf.append(piece)
+    if buf:
+        out.append(" ".join(buf).strip())
+    return [x for x in out if x]
+
+
+def _split_oversize_body(text, threshold_tokens, pack_target, estimate_fn):
+    """Return one or more text segments; single element if already under threshold."""
+    if estimate_fn(text) <= threshold_tokens:
+        return [text]
+    sents = _rough_sentences(text)
+    packed = _pack_under_token_budget(sents, pack_target, estimate_fn)
+    return packed if packed else [text]
+
+
+def _expand_oversize_chunks(chunks):
+    """Split verse/chapter chunks whose text exceeds cfg.CHUNK_MAX_TOKENS."""
+    threshold = cfg.CHUNK_MAX_TOKENS
+    pack_target = cfg.CHUNK_TARGET_TOKENS
+    est = cfg.estimate_tokens
+    expanded = []
+    for ch in chunks:
+        if ch["chunk_level"] not in ("verse", "chapter"):
+            expanded.append(ch)
+            continue
+        if est(ch["text"]) <= threshold:
+            expanded.append(ch)
+            continue
+        parts = _split_oversize_body(ch["text"], threshold, pack_target, est)
+        if len(parts) <= 1:
+            expanded.append(ch)
+            continue
+        for p in parts:
+            expanded.append({
+                "text": p,
+                "verse_start": ch["verse_start"],
+                "verse_end": ch["verse_end"],
+                "chunk_level": ch["chunk_level"],
+            })
+    return expanded
+
+
+def _delete_chapter_rows(collection, book, chapter):
+    """Remove all indexed rows for this book/chapter (metadata filter)."""
+    res = collection.get(
+        where={
+            "$and": [
+                {"book": {"$eq": book}},
+                {"chapter": {"$eq": int(chapter)}},
+            ]
+        },
+    )
+    ids = res.get("ids") or []
+    if ids:
+        collection.delete(ids=ids)
+    return len(ids)
 
 
 def _ref_id(book, chapter, verse_start, verse_end, chunk_level):
@@ -188,7 +306,7 @@ def get_collection(db_path):
     )
 
 
-def ingest(input_path, book, translator, chapter, db_path, verbose=False):
+def ingest(input_path, book, translator, chapter, db_path, verbose=False, replace_chapter=False):
     raw = Path(input_path).read_text(encoding="utf-8")
     cleaned = clean_ocr_text(raw)
 
@@ -226,7 +344,16 @@ def ingest(input_path, book, translator, chapter, db_path, verbose=False):
             "chunk_level": "verse",
         })
 
+    chunks = _expand_oversize_chunks(chunks)
+
     collection = get_collection(db_path)
+    if replace_chapter:
+        removed = _delete_chapter_rows(collection, book, chapter)
+        if verbose:
+            print(
+                f"replace-chapter: removed {removed} existing row(s) for {book} chapter {chapter}",
+                file=sys.stderr,
+            )
 
     new_ids, new_docs, new_embeddings, new_metas = [], [], [], []
     skipped = 0
@@ -278,6 +405,11 @@ def parse_args():
     parser.add_argument("--chapter", type=int, required=True, help="Chapter number from the source edition.")
     parser.add_argument("--db-path", default=cfg.CHROMA_PATH, help="ChromaDB persistence directory.")
     parser.add_argument("--verbose", action="store_true", help="Print per-chunk add/skip log.")
+    parser.add_argument(
+        "--replace-chapter",
+        action="store_true",
+        help="Delete all Chroma rows for this book+chapter before ingest (drops stale hashes after text splits).",
+    )
     return parser.parse_args()
 
 
@@ -290,5 +422,6 @@ if __name__ == "__main__":
         chapter=args.chapter,
         db_path=args.db_path,
         verbose=args.verbose,
+        replace_chapter=args.replace_chapter,
     )
     print(f"Ingested {added} new chunks, skipped {skipped} already present.")

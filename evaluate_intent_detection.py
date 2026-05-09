@@ -17,13 +17,14 @@ DEFAULT_INTENT_CASES = [
 ]
 
 
-def evaluate_cases(cases, model_name, timeout_s):
+def evaluate_cases(cases, model_name, timeout_s, num_ctx):
     rows = []
     for case in cases:
         result = detect_intent(
             question=case["question"],
             model_name=model_name,
             timeout_s=timeout_s,
+            num_ctx=num_ctx,
         )
         detected = result.get("intent", "general")
         matched = detected == case["expected_intent"]
@@ -48,6 +49,7 @@ def evaluate_cases(cases, model_name, timeout_s):
         "cases": len(rows),
         "model_name": model_name,
         "timeout_s": timeout_s,
+        "num_ctx": num_ctx,
         "intent_accuracy": round(accuracy, 3),
         "fallback_rate": round(fallback_rate, 3),
     }
@@ -74,19 +76,35 @@ def parse_args():
         default=None,
         help="Ollama model name. Defaults to ASTRO_MODEL_NAME env or engine default.",
     )
+    parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=None,
+        help="Ollama num_ctx for intent LLM fallback. Defaults to ASTRO_NUM_CTX env or engine default.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    model_name, timeout_s = resolve_ollama_config(model_name=args.model, timeout_s=args.timeout)
+    model_name, timeout_s, num_ctx = resolve_ollama_config(
+        model_name=args.model,
+        timeout_s=args.timeout,
+        num_ctx=args.num_ctx,
+    )
     print(
-        f"Using model={model_name} timeout_s={timeout_s} "
+        f"Using model={model_name} timeout_s={timeout_s} num_ctx={num_ctx} "
         f"(ASTRO_MODEL_NAME={os.getenv('ASTRO_MODEL_NAME', '') or 'unset'}, "
-        f"ASTRO_OLLAMA_TIMEOUT_S={os.getenv('ASTRO_OLLAMA_TIMEOUT_S', '') or 'unset'})",
+        f"ASTRO_OLLAMA_TIMEOUT_S={os.getenv('ASTRO_OLLAMA_TIMEOUT_S', '') or 'unset'}, "
+        f"ASTRO_NUM_CTX={os.getenv('ASTRO_NUM_CTX', '') or 'unset'})",
         flush=True,
     )
-    report = evaluate_cases(DEFAULT_INTENT_CASES, model_name=model_name, timeout_s=min(45, timeout_s))
+    report = evaluate_cases(
+        DEFAULT_INTENT_CASES,
+        model_name=model_name,
+        timeout_s=min(45, timeout_s),
+        num_ctx=num_ctx,
+    )
     with open(args.output, "w", encoding="utf-8") as fp:
         json.dump(report, fp, indent=2)
     print(json.dumps(report["summary"], indent=2))

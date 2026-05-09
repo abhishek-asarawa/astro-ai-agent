@@ -175,7 +175,7 @@ def main():
         city_name = "bengaluru"
 
     model_override = model_input.strip() or None
-    resolved_model, resolved_timeout = resolve_ollama_config(
+    resolved_model, resolved_timeout, resolved_num_ctx = resolve_ollama_config(
         model_name=model_override,
         timeout_s=int(timeout_input),
     )
@@ -202,6 +202,7 @@ def main():
                     question=cleaned_question,
                     model_name=resolved_model,
                     timeout_s=min(45, resolved_timeout),
+                    num_ctx=resolved_num_ctx,
                 )
             except Exception:
                 intent_info = {
