@@ -12,24 +12,25 @@
 - **PR1** (RAG in LLM prompt + CLI) — **DONE**
 - **PR2** (Streamlit sources + RAG toggle) — **DONE** (2026-05-02)
 - **Career generation eval** (`evaluate_career.py`): **embedding grounding + optional LLM judge + `--retention-mode {legacy,rag}`** — **DONE**
-- **Last retrieval-only eval (accepted)**: `rag_v0_20260503_085118` in `rag_eval_records/` (see `rag_eval_history.json`; history **2 / 3** slots)
-  - `rag_recall_at_3_gold = 1.00` (target ≥ 0.60) ✅
-  - `rag_recall_at_5_silver = 0.90` (target ≥ 0.80) ✅
-  - `rag_heuristic_delta = +0.60` (target > 0) ✅
+- **Latest accepted RAG eval (rolling history):** `rag_v0_20260509_203851` in `rag_eval_records/` (see `rag_eval_history.json`)
+  - **Tuple** `(rag_recall_at_3_gold, rag_recall_at_5_silver, rag_heuristic_delta)` = **`(1.00, 1.00, +0.67)`** — accepted vs prior best **`rag_v0_20260503_085118`** **`(1.00, 0.90, +0.60)`** (lexicographic improvement on silver + delta).
+  - Summary includes **`outcomes_checksum`** for tie-breaking when headline metrics match.
+- **Historical baseline (pre–full-book scale):** `rag_v0_20260503_085118` — `1.00 / 0.90 / +0.60` (targets ≥ 0.60 gold, ≥ 0.80 silver, delta > 0).
+- **`evaluate_rag.py` retention (2026-05-10):** compare **`(gold@3, silver@5, mean heuristic_delta)`** lexicographically vs best history row; on **tie**, compare **`outcomes_checksum`**; legacy rows without checksum still **accept** on tie; identical summary+checksum **accepts** to rotate snapshots. **Reject** only on strict **regression** of the tuple.
 - **Latest `evaluate_rag.py --no-retention` (14 cases, Ch. 21 ingest, 2026-05-03)**: `1.00 / 1.00 / +0.50` — Ch. 21 eighth-house goldens + `intent_router` / `rag_config` health keyword expansion; **`health_diseases_from_6th_house`** chart entity tweak (see Decisions log).
-- **Earlier `evaluate_rag.py --no-retention` (Tier 2 hybrid, 2026-05-03)**: `1.00 / 1.00 / +1.10` — `career_saturn_debilitated_10th` **silver@5 pass**; BM25+RRF + BM25-only query variants + chart/question **dignity entity aliases** in [`rag_search.py`](rag_search.py). **`evaluate_rag.py` retention** still requires **strict** `rag_recall_at_3_gold` **>** baseline, so at gold ceiling **1.00** a tie does not append history — use `--no-retention` to record this snapshot or relax policy in code if you want it in `rag_eval_history.json`.
+- **Earlier `evaluate_rag.py --no-retention` (Tier 2 hybrid, 2026-05-03)**: `1.00 / 1.00 / +1.10` — `career_saturn_debilitated_10th` **silver@5 pass**; BM25+RRF + BM25-only query variants + chart/question **dignity entity aliases** in [`rag_search.py`](rag_search.py).
 - **`evaluate_rag.py` production intent (2026-05-03):** default path uses **`intent_router.detect_intent()`** (same family as `--rag-on` in [`astro_engine.py`](astro_engine.py)); golden file **`expected_intent`** is a label only; report adds `used_intent`, `intent_detection`, `intent_matches_golden`, summary **`intent_routing_agreement`**. Use **`--golden-intent`** to restore retrieval-only isolation. **`intent_router` career keywords** broadened (e.g. `10th lord`, `karma yogi`, `livelihood`) so BPHS-style questions hit **rules** intent `career` without LLM fallback.
 - **Last career RAG baseline (rag retention)**: first accepted record with judge + grounding, e.g. `career_20260502_114813` in `eval_records/` (see `eval_history.json`; summary includes `rag_judge_grounding_avg`, `rag_grounding_max_sim_avg`, `retention_mode: rag`)
 - **Corpus (BPHS, Sharma English Vol. 1)**: **47** chapters (`book=bphs`, `chapter=1..47`) indexed in `chroma_db/`; **~1.4k+** chunk rows after full-volume ingest (exact `col.count()` varies with re-runs). **Chapter `.txt` files are not in git** (`.gitignore`: `data/corpus/bphs_sharma/**/*.txt`); reproduce OCR from the PDF using `tools/extract_bphs_vol1_from_map.py` and `tools/bphs_vol1_sharma_chapter_starts.json`, then `scripts/ingest_bphs_from_full_pdf_dir.py` or `knowledge_builder.py`.
 - **Full-volume ingest (2026-05-09):** Chapters **1–12** and **26–47** via PDF page map + OCR (`ch_N_bphs_vol1.txt`); chapters **13–25** kept from earlier targeted extracts (`ch_*_effects_*` / `ch_13_judgement_*`). **`VERSE_HEAD_RE`** tightened so prose like `7 or the Uttarardha…` does not fake a verse boundary.
-- **Ch. 15 ingest (2026-05-03):** OCR PDF pp. 209–219 → `data/corpus/bphs_sharma/ch_15_effects_of_2_house.txt` (local OCR); golden **`wealth_2nd_lord_in_11th_11th_lord_in_2nd`**, **`wealth_jupiter_mars_in_2nd_house`**. Full `evaluate_rag.py` **12** cases **`--no-retention`**: `1.00 / 1.00 / +0.75` (retrieval-only; tie policy unchanged).
+- **Ch. 15 ingest (2026-05-03):** OCR PDF pp. 209–219 → `data/corpus/bphs_sharma/ch_15_effects_of_2_house.txt` (local OCR); golden **`wealth_2nd_lord_in_11th_11th_lord_in_2nd`**, **`wealth_jupiter_mars_in_2nd_house`**. Full `evaluate_rag.py` **12** cases **`--no-retention`**: `1.00 / 1.00 / +0.75`.
 - **Ch. 21 ingest (2026-05-03):** OCR PDF pp. 255–280 (trimmed to Ch. 21 only) → `data/corpus/bphs_sharma/ch_21_effects_of_8_house.txt`; **`evaluate_rag.py` 14 cases `--no-retention`**: `1.00 / 1.00 / +0.50` (see scoreboard). Golden **`health_8th_lord_in_kendra_long_life`** uses **gold `bphs-ch21-v4-7`** (kendra + longevity block; opening `v1` often ranks 4th after rerank). **`health_diseases_from_6th_house`** chart `jupiter` moved from **house 8 → house 6** so query entities do not spuriously boost unrelated `8th_house` chunks over `bphs-ch19-v1`.
 - **Ch. 22 ingest (2026-05-03):** OCR PDF pp. **263–268** → `data/corpus/bphs_sharma/ch_22_effects_of_9_house.txt` (`Sth`→`5th`/`9th` OCR fixes; long father-death block split **v13–17** / **v18–25** so health queries are not swamped). Goldens **`family_9th_lord_exalted_father_longlife`**, **`family_9th_10th_lord_exchange_father_wealth`**. **`evaluate_rag.py` 16 cases `--no-retention`**: `1.00 / 1.00 / +0.19` (`rag_heuristic_delta` **+0.188**); **`health_ascendant_lord_with_malefics`** chart lists **all** conjunct bodies so **`Mercury`** appears in query entities and **`bphs-ch19-v6`** wins over Ch. 22 death text.
-- **Full-book RAG eval pass (2026-05-10):** `evaluate_rag.py --no-retention` on **19** golden cases (16 legacy + **Ch. 33 / 34 / 36** Argala / Karakatwas / Karakamsa) with production `detect_intent`: **`rag_recall_at_3_gold = 1.00`**, **`rag_recall_at_5_silver = 1.00`**, **`rag_heuristic_delta ≈ +0.67`** (headline summary from `rag_eval_report.json`; local `chroma_db` ~1400 rows). Fixes: **`search_for_eval`** now calls `search(top_k=None)` so eval scores the **full** deduped rerank pool (the old `top_k=DENSE_TOP_K` slice dropped gold refs); rerank adds **`PRE_RERANK_WEIGHT`**, **`HOUSE_EFFECTS_CHAPTER` / `CHAPTER_HINT_WEIGHT`**, lordship hints from `chart_context.dignity`, health **Ascendant**→Ch.19 nudge, **Navamsa** align bonus, **`BM25_SIMILARITY_CAP`**, and extra **dense queries** (debilitated 10th, Rahu 8th/10th, 11th wealth). **`evaluate_rag.py` retention** unchanged: at gold ceiling **1.00**, strict improvement may still reject ties — use **`--no-retention`** while iterating or relax `maybe_save_result` if you want history bumps on tie.
+- **Full-book RAG eval pass (2026-05-10):** **19** golden cases (legacy set + **Ch. 33 / 34 / 36**) with production `detect_intent`: headline **`1.00 / 1.00 / +0.67`** on a full Vol. 1 index (~1.4k chunks). Engineering: **`search_for_eval`** uses full deduped rerank pool; rerank adds **pre-order bonus**, **`HOUSE_EFFECTS_CHAPTER`**, lordship hints, Navamsa alignment, **`BM25_SIMILARITY_CAP`**, extra dense queries (debilitated 10th, Rahu 8th/10th, 11th wealth); silver labels adjusted where the enlarged index changed top-5 membership.
 - **Next focus** (optional): **`evaluate_rag` LLM-judge** (Tier 3); broaden golden set beyond 19 if you want house-by-house coverage.
 - **Ch. 23 v16 corpus fix (2026-05-03):** `debiltation` → `debilitation` in `data/corpus/bphs_sharma/ch_23_effects_of_10_house.txt`; re-ingested with stale-hash cleanup. Silver miss that remained after OCR was addressed with **hybrid retrieval + dignity synonym overlap** (see Decisions log).
 
-**Guardrails:** `evaluate_rag.py` retention uses retrieval metrics only. **`evaluate_career.py`** can use **`--retention-mode legacy`** (enriched keyword/template, older behavior) or **`--retention-mode rag`** (lexicographic composite: judge score → max chunk similarity → citations → RAG template). Keyword averages alone are a weak signal for generation quality; prefer grounding + judge for RAG regressions.
+**Guardrails:** `evaluate_rag.py` retention uses the **lexicographic tuple + `outcomes_checksum`** (see Status snapshot). **`evaluate_career.py`** can use **`--retention-mode legacy`** (enriched keyword/template, older behavior) or **`--retention-mode rag`** (lexicographic composite: judge score → max chunk similarity → citations → RAG template). Keyword averages alone are a weak signal for generation quality; prefer grounding + judge for RAG regressions.
 
 ---
 
@@ -45,7 +46,7 @@
 | `tools/scan_bphs_vol1_chapter_starts.py` | Full-PDF scan helper for `Chapter N` headers (optional rebuild of map) | CLI |
 | `scripts/ingest_bphs_from_full_pdf_dir.py` | Batch ingest every `ch_<n>_*.txt` under a directory | CLI |
 | `rag_search.py` | Online retrieval: multi-query expansion → dense+filter → **BM25 + RRF** (optional) → **dedupe by `ref_id`** (best dense slice) → heuristic rerank (+ **entity tail** beyond cap) | `search()`, `search_for_eval()` |
-| `evaluate_rag.py` | Golden eval + smart retention; default **`detect_intent`** for retrieval (see `--golden-intent`) | `evaluate()`, CLI |
+| `evaluate_rag.py` | Golden eval + **lexicographic + checksum** retention; default **`detect_intent`** (see `--golden-intent`) | `evaluate()`, CLI |
 | `data/golden/rag_eval_v0.json` | 19 hand-labeled cases (+ 3 general: Ch. 33 / 34 / 36) | — |
 | `chroma_db/` | Persistent vector store (cosine space, 768-dim) | — |
 | `rag_eval_history.json` | Accepted-runs index (max 3 records) — **local / gitignored** | — |
@@ -78,7 +79,7 @@
 | **19-case golden dataset** (+ Ch. 33 Argala, Ch. 34 Karakatwas, Ch. 36 Karakamsa) | ✅ (2026-05-10) |
 | Idempotency on re-ingest verified (sha256 IDs) | ✅ |
 | **Ingest full Sharma Vol. 1** — chapters **1–47** (PDF map + OCR + Chroma); corpus `.txt` gitignored | ✅ (2026-05-09) |
-| Acceptance thresholds met; latest accepted **1.00 / 0.90 / +0.60** (`rag_v0_20260503_085118`) | ✅ |
+| Acceptance thresholds; post–full-book accepted **`rag_v0_20260509_203851`** **1.00 / 1.00 / +0.67**; historical **`rag_v0_20260503_085118`** **1.00 / 0.90 / +0.60** | ✅ |
 
 ### PR1 — Wire retrieval into the LLM prompt ✅ DONE
 
@@ -116,8 +117,7 @@ This phase is now complete. `rag_search.search()` is consumed by generation via 
 | Sentence-aware splitter for chunks > `CHUNK_MAX_TOKENS` (600) | `knowledge_builder.py` (`_expand_oversize_chunks`, `--replace-chapter`) | M | ✅ **Done** — Ch. 19 re-ingest; gold case 7 + retention **`rag_v0_20260503_085118`** |
 | Rerank: dedupe by `ref_id` + entity tail | `rag_search.py`, `rag_config.py` (`ENTITY_TAIL_*`) | S | Unblocked gold@3 on `health_8th_lord_in_6th_with_moon` after split |
 | BM25 hybrid retrieval (dense + sparse, RRF merge) | `rag_search.py`, `rank-bm25`, `rag_config.py` (`HYBRID_BM25_*`, `RRF_*`) | M | ✅ **Done** (2026-05-03) — `HYBRID_BM25_ENABLED`, BM25-only query variants (`debilitation` / `navamamsha`), high `RRF_WEIGHT_DENSE` so pre-rerank stays dense-shaped; **dignity aliases** in `_query_entities` (`debilitated` ↔ `debilitation`) fix silver@5 for `career_saturn_debilitated_10th` |
-| Ingest Ch. 17 (2nd house — wealth/family), Ch. 22 (9th — father/fortune), Ch. 21 (8th — longevity) | corpus + `knowledge_builder.py` | S each | ✅ **Ch. 15 (Second House)** = backlog “2nd house” item; ✅ **Ch. 21 (Eighth House)** (2026-05-03); ✅ **Ch. 22 (Ninth House)** (2026-05-03). **Ch. 33 / 36** now in index via **full Vol. 1 ingest** (2026-05-09); optional: **golden cases** for those chapters |
-| Ingest Ch. 33 (Karakatwas), Ch. 36 (Karakamsa) | corpus | S each | ✅ **Indexed** with full book (2026-05-09); goldens / eval coverage still optional |
+| Ingest Ch. 17 (2nd house — wealth/family), Ch. 22 (9th — father/fortune), Ch. 21 (8th — longevity) | corpus + `knowledge_builder.py` | S each | ✅ **Ch. 15 (Second House)** = backlog “2nd house” item; ✅ **Ch. 21 (Eighth House)** (2026-05-03); ✅ **Ch. 22 (Ninth House)** (2026-05-03). **Ch. 33 / 34 / 36**: indexed via **full Vol. 1 ingest** + **goldens in `rag_eval_v0.json`** (2026-05-10). |
 | Test retrieval with `intent_router.detect_intent()` instead of `expected_intent` | `evaluate_rag.py` | S | ✅ **Done** (2026-05-03) — default production path; `--golden-intent` isolates retriever |
 
 ### Backlog — production polish (Tier 3)
@@ -159,7 +159,7 @@ general_atma_karaka_degrees              general     ✓        ✓       2
 general_karakamsha_benefics_angles       general     ✓        ✓       0
 ```
 
-Historical **`rag_v0_20260503_085118`** row is still valid as a pre-full-book retention snapshot; post-full-book quality is tracked via fresh `rag_eval_report.json` / optional `rag_eval_history.json` accepts.
+Historical **`rag_v0_20260503_085118`** remains a useful **pre–full-book** checkpoint; post–full-book rolling accepts include **`rag_v0_20260509_203851`** at **`1.00 / 1.00 / +0.67`** (see Status snapshot).
 
 ---
 
@@ -196,7 +196,8 @@ Historical **`rag_v0_20260503_085118`** row is still valid as a pre-full-book re
 | Embedding grounding for answers | Reuse `rag_search.embed_query` + cosine vs each retrieved chunk; report max/mean sim in eval summary | 2026-05-02 |
 | PR2 Streamlit | RAG default-on checkbox + Sources expander + ref strip on final streamed text | 2026-05-02 |
 | **Edit verse text → new sha256 id** | `knowledge_builder` only skips/adds by content hash; changing chunk text adds a new row and leaves the old id in Chroma (duplicate `ref_id`). Delete the stale id or full re-ingest from empty DB if duplicates appear | 2026-05-03 |
-| **`evaluate_rag.py` retention needs strict gold@3 increase** | At `rag_recall_at_3_gold = 0.90` on 10 cases, many quality-only fixes cannot append history; use `--no-retention` for verification, or relax guardrails in code if policy changes | 2026-05-03 |
+| **`evaluate_rag.py` retention needs strict gold@3 increase** | **Superseded (2026-05-10)** by lexicographic `(gold, silver, delta)` + `outcomes_checksum` tie-break (see new row below). Old policy blocked history updates when gold was capped at 1.0. | 2026-05-03 |
+| **`evaluate_rag.py` lexicographic retention + `outcomes_checksum`** | Compare `(rag_recall_at_3_gold, rag_recall_at_5_silver, rag_heuristic_delta)` vs best history; reject only on regression; on tie use SHA-256 over per-case outcomes (pass flags, delta, post/pre top-5 refs); accept identical checksums to rotate snapshots; legacy rows without checksum accept on tie | 2026-05-10 |
 | **Oversize ingest split + `--replace-chapter`** | Verses/chapter summaries over `CHUNK_MAX_TOKENS` split into multiple Chroma docs with the same `ref_id` metadata; replace-chapter deletes by `book`+`chapter` before re-add to avoid duplicate old hashes | 2026-05-03 |
 | **Pre-rerank dedupe by `ref_id` (best dense similarity)** | Split verses share one citation tag; only one slice per `ref_id` enters the rerank pool so slots are not wasted on duplicate refs | 2026-05-03 |
 | **`ENTITY_TAIL_WEIGHT` / `ENTITY_TAIL_MAX`** | After `ENTITY_MATCH_CAP`, add a small bounded bonus per extra query–chunk entity overlap so near-tie dense neighbors can reorder without raising the cap | 2026-05-03 |
@@ -302,15 +303,18 @@ Then for any path:
 
 If recall regresses, these are the first knobs to turn:
 
-| Constant | Current | Effect of raising | Effect of lowering |
+| Constant | Current (see `rag_config.py`) | Effect of raising | Effect of lowering |
 | --- | --- | --- | --- |
 | `DENSE_TOP_K` | 10 | More candidates for reranker, slower | Tighter, faster, may drop gold |
 | `RERANK_TOP_K` | 3 | More chunks to LLM (more context, more cost) | Less context, more focus |
-| `ENTITY_WEIGHT` | 0.20 | Reranker leans more on entity overlap | More on dense similarity |
+| `ENTITY_WEIGHT` | 0.12 | Reranker leans more on entity overlap | More on dense similarity |
 | `ENTITY_MATCH_CAP` | 3 | Long-entity-list chunks dominate again | Even tighter cap |
 | `ENTITY_TAIL_WEIGHT` | 0.03 | Stronger preference for chunks with many entity hits beyond the cap | Weaker tail; may lose tight gold@3 races |
 | `ENTITY_TAIL_MAX` | 3 | Larger tail bonus (more extra hits counted) | Smaller tail |
-| `INTENT_WEIGHT` | 0.10 | Intent filter has more pull at rerank | Less |
+| `INTENT_WEIGHT` | 0.08 | Intent filter has more pull at rerank | Less |
+| `PRE_RERANK_WEIGHT` | 0.18 | Stronger trust in dense/RRF ordering before rerank | Weaker; entity/sim scores reorder more |
+| `CHAPTER_HINT_WEIGHT` | 0.14 | Stronger preference for BPHS “effects” chapter aligned to cited house | Weaker cross-chapter hints |
+| `NAVAMSA_ALIGN_WEIGHT` | 0.16 | Stronger bonus when question + chunk mention Navamsa/Navamsha | Weaker Navamsa rescue |
 | `LENGTH_PENALTY_PER_100` | 0.10 | Big chunks penalized harder | Big chunks compete |
 | `LENGTH_PENALTY_THRESHOLD` | 500 | Only very long chunks penalized | More chunks penalized |
 | `CHUNK_TARGET_TOKENS` | 400 | Larger chunks (more context per chunk) | Smaller chunks (more chunks) — only takes effect if a real splitter is added |
@@ -320,6 +324,7 @@ If recall regresses, these are the first knobs to turn:
 | `RRF_WEIGHT_DENSE` | `12` | Pre-rerank order tracks dense more closely (often raises `rag_heuristic_delta`) | BM25 reorders more inside the pool |
 | `RRF_WEIGHT_SPARSE` | `1` | BM25 pulls harder in RRF | Weaker lexical rescue for rare tokens |
 | `BM25_SIMILARITY_FLOOR` | `0.05` | Higher floor for BM25-only chunks in dedupe | Lower floor |
+| `BM25_SIMILARITY_CAP` | `0.88` | Lower cap: BM25-only rows less likely to beat dense in rerank | Higher cap: BM25 rows compete harder |
 
 Re-run `evaluate_rag.py` after any tuning to verify guardrails still pass.
 
@@ -336,15 +341,15 @@ Re-run `evaluate_rag.py` after any tuning to verify guardrails still pass.
 - "How do I rebuild Sharma Vol. 1 corpus from the PDF?" → `tools/bphs_vol1_sharma_chapter_starts.json`, `tools/extract_bphs_vol1_from_map.py`, `scripts/ingest_bphs_from_full_pdf_dir.py`
 - "How are long verses split for indexing?" → `knowledge_builder.py::_expand_oversize_chunks` (threshold `rag_config.CHUNK_MAX_TOKENS`)
 - "What does the golden file look like?" → `data/golden/rag_eval_v0.json`
-- "How does smart retention work?" → `evaluate_rag.py::maybe_save_result`
+- "How does RAG eval retention work?" → `evaluate_rag.py::passes_guardrails`, `maybe_save_result`, `_outcomes_checksum`
 - "Career RAG grounding / judge / retention?" → `evaluate_career.py` (`score_grounding_embedding()`, `run_grounding_judge()`, `passes_guardrails()`, `select_global_baseline()`)
 
 ---
 
 ## When you finish a meaningful change
 
-1. Run `python evaluate_rag.py` (with retention) to attempt history acceptance for **retrieval-only** quality. If headline `rag_recall_at_3_gold` matches the best prior run with **no strict improvement**, retention rejects ties — use **`--no-retention`** to validate metrics without fighting guardrails.
+1. Run `python evaluate_rag.py` (with retention) to attempt history acceptance. **Regression** on `(gold, silver, heuristic_delta)` rejects; **ties** use **`outcomes_checksum`**. Use **`--no-retention`** for scratch metrics without updating `rag_eval_history.json`.
 2. If you changed **generation + RAG**, run `evaluate_career.py --rag` with **`--retention-mode rag`** and (recommended) **`--judge-model ...`**; check `career_eval_report.json` and `eval_history.json`.
-3. If accepted, the new record is appended to the relevant history file. If rejected, fix or document why before continuing.
+3. If accepted, the new record is appended (or rotated) in the relevant history file. If rejected, fix or document why before continuing.
 4. Update this file's **Status snapshot** + **Phase tracker** sections.
 5. If a new decision was made, add a row to **Decisions log** with date and rationale.

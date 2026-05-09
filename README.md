@@ -88,6 +88,7 @@ History is global (all eval types/models compared together).
 - `eval_history.json`: accepted history index (created after accepted runs)
 - `eval_records/`: accepted report snapshots (created after accepted runs)
 - `career_eval_report.json`: latest run output file (default)
+- `data/golden/rag_eval_v0.json`: hand-labeled retrieval **golden** cases (committed)
 
 ## Setup
 
@@ -215,18 +216,27 @@ model is evicted between calls, and ChromaDB on local SQLite.
 ### Components
 
 - `rag_config.py` — single source of truth for embed model, Chroma path,
-  chunking targets, reranker weights, and entity / intent regex banks.
+  chunking targets, reranker weights, house→chapter hints for BPHS “effects”
+  chapters, and entity / intent regex banks.
 - `knowledge_builder.py` — idempotent ingest CLI: cleans OCR artifacts,
   splits a chapter into verse-level chunks (+ one chapter-summary chunk),
   tags entities and intents, embeds, and upserts. SHA-256 chunk IDs make
   re-runs free.
 - `rag_search.py` — multi-query expansion (literal question + structural
-  chart query + intent-keyword query), intent-filtered Chroma dense search,
-  merge / dedupe by ref_id, heuristic rerank.
-- `evaluate_rag.py` — runs the golden dataset through the retriever and
-  scores `rag_recall_at_3_gold`, `rag_recall_at_5_silver`, and
-  `rag_heuristic_delta` (mean rank-up of gold refs after rerank). Smart
-  retention into `rag_eval_history.json`.
+  chart query + intent-keyword query + targeted variants e.g. Navamsa / 11th
+  wealth), intent-filtered Chroma dense search, optional **BM25 + RRF** fusion,
+  dedupe by `ref_id` (best dense slice per citation), heuristic rerank with
+  pre-order trust, house-chapter hints, Navamsa alignment, and capped BM25-only
+  pseudo-similarity scores.
+- `evaluate_rag.py` — runs [`data/golden/rag_eval_v0.json`](data/golden/rag_eval_v0.json)
+  (hand-labeled cases, including **Ch. 33 / 34 / 36** general topics) through
+  the retriever with production `intent_router.detect_intent()` by default.
+  Scores `rag_recall_at_3_gold`, `rag_recall_at_5_silver`, and
+  `rag_heuristic_delta`; summary includes **`outcomes_checksum`** (SHA-256 over
+  per-case pass/fail, deltas, and post/pre top-5 ref lists). **Retention**
+  compares runs lexicographically on
+  `(gold, silver, heuristic_delta)`, then breaks ties with the checksum (see
+  [`RAG_PLAN.md`](RAG_PLAN.md)). Writes optional history to `rag_eval_history.json`.
 
 ### Chunk schema (Chroma metadata)
 
@@ -279,18 +289,31 @@ python evaluate_rag.py \
   --history rag_eval_history.json
 ```
 
-Acceptance thresholds for v0 (single-chapter corpus, 5 golden cases):
+Quality targets (adjust as your golden set grows; current file has **19** cases):
 
-- `rag_recall_at_3_gold >= 0.6` (≥3 of 5 gold refs surface in the post-rerank top-3)
-- `rag_recall_at_5_silver >= 0.8`
-- `rag_heuristic_delta > 0` (the heuristic reranker is doing useful work)
+- `rag_recall_at_3_gold >= 0.6` was the original v0 bar on a small set; full-book
+  tuning aims for **1.0** on the maintained goldens when the index is complete.
+- `rag_recall_at_5_silver >= 0.8` — silver refs in post-rerank top-5.
+- `rag_heuristic_delta > 0` — on average, reranking moves gold refs up vs the
+  pre-rerank pool (see `evaluate_rag.py`).
 
-Smart retention (mirrors `evaluate_career.py`):
+**Smart retention** (see `evaluate_rag.py::passes_guardrails`):
 
-1. New record accepted only if `rag_recall_at_3_gold` strictly improves and
-   `rag_recall_at_5_silver` does not drop vs the current best.
-2. Up to 3 records kept; oldest of the least-good is evicted on overflow.
-3. Accepted reports are snapshotted under `rag_eval_records/`.
+1. Baseline = best historical record by lexicographic
+   `(rag_recall_at_3_gold, rag_recall_at_5_silver, rag_heuristic_delta)`.
+2. A run **improves** if that tuple is strictly greater; **regresses** if strictly
+   lower.
+3. If the tuple **ties**, compare **`outcomes_checksum`** (per-case outcomes).
+   Different checksum ⇒ accept (same headline metrics, retrieval behavior
+   changed). Equal checksum ⇒ still accept to **rotate** rolling snapshots.
+   Legacy history rows without checksum compare as tie → accept.
+4. Up to **3** records in `rag_eval_history.json`; when full, evict the **weakest**
+   tuple, then **oldest** among ties (`evaluate_rag.py::apply_retention`).
+5. Accepted reports are copied under `rag_eval_records/` (local only).
+
+`rag_eval_report.json`, `rag_eval_history.json`, and `rag_eval_records/` are
+**gitignored**; regenerate with `evaluate_rag.py` after changing retrieval or the
+golden file.
 
 ### Phase 4 PR1: RAG-enriched generation
 
@@ -335,3 +358,5 @@ PR1 acceptance target:
 - Large models and high worker counts can cause slow or empty responses. Reduce `--workers` or increase `--timeout` if needed.
 - The corpus directory (`data/corpus/`) and the Chroma store (`chroma_db/`)
   are gitignored. Re-run `knowledge_builder.py` after a fresh checkout.
+- For retrieval tuning defaults, rerank bonuses, and operational notes, see
+  [`RAG_PLAN.md`](RAG_PLAN.md).
