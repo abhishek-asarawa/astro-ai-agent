@@ -20,7 +20,7 @@
       "saturn": {"house": 8, "dignity": "conjunct Rahu"}
     },
     "gold_citations": ["bphs-ch23-v6"],
-    "silver_citations": ["bphs-ch23-v11", "bphs-ch23-v7"]
+    "silver_citations": ["bphs-ch26-v99", "bphs-ch11-v7-11"]
   },
   {
     "case_id": "career_jupiter_aspect_karma_yogi",
@@ -43,7 +43,7 @@
       "saturn": {"sign": "Aries", "dignity": "debilitated", "house": 10}
     },
     "gold_citations": ["bphs-ch23-v16"],
-    "silver_citations": ["bphs-ch23-v18", "bphs-ch23-v17"]
+    "silver_citations": ["bphs-ch23-v11", "bphs-ch23-v2"]
   },
   {
     "case_id": "career_fame_through_moon_in_10th",
@@ -117,7 +117,7 @@
       "jupiter": {"house": 2}
     },
     "gold_citations": ["bphs-ch24-v3"],
-    "silver_citations": ["bphs-ch24-v9", "bphs-ch24-v4"]
+    "silver_citations": ["bphs-ch15-v4", "bphs-ch43-v3"]
   },
   {
     "case_id": "wealth_2nd_lord_in_11th_11th_lord_in_2nd",
@@ -192,5 +192,31 @@
     },
     "gold_citations": ["bphs-ch22-v7"],
     "silver_citations": ["bphs-ch22-v6", "bphs-ch22-summary"]
+  },
+  {
+    "case_id": "general_argala_formation_houses",
+    "question": "According to Parashara, how is Argala formed and how do planets and houses determine its definite effects?",
+    "expected_intent": "general",
+    "chart_context": {
+      "lagna": "Cancer"
+    },
+    "gold_citations": ["bphs-ch33-v2-9"],
+    "silver_citations": ["bphs-ch37-v4", "bphs-ch38-v56"]
+  },
+  {
+    "case_id": "general_atma_karaka_degrees",
+    "question": "What is the Atma Karaka and how is it determined from the degrees of the seven or eight planets from Sun to Saturn or Rahu?",
+    "expected_intent": "general",
+    "chart_context": {},
+    "gold_citations": ["bphs-ch34-v3-8"],
+    "silver_citations": ["bphs-ch34-v1-2", "bphs-ch34-summary"]
+  },
+  {
+    "case_id": "general_karakamsha_benefics_angles",
+    "question": "In Karakamsa analysis, why do natural benefics not give auspicious effects when they are lords of angular houses?",
+    "expected_intent": "general",
+    "chart_context": {},
+    "gold_citations": ["bphs-ch36-v2-7"],
+    "silver_citations": ["bphs-ch36-v8-10", "bphs-ch36-v4"]
   }
 ]

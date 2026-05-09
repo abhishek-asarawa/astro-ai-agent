@@ -15,12 +15,22 @@ Pass ``golden_intent=True`` (CLI: ``--golden-intent``) to use the golden file's
   appeared in the pre-rerank top-`DENSE_TOP_K`. Positive means the
   reranker pulled gold refs closer to the top.
 
-Results are persisted with the same smart-retention pattern as
-`evaluate_career.py`, but in a dedicated `rag_eval_history.json` to
-avoid mixing metric schemas with the existing model-quality history.
+Results are persisted with smart retention in `rag_eval_history.json`
+(separate from career eval history).
+
+Retention compares runs **lexicographically** on
+`(rag_recall_at_3_gold, rag_recall_at_5_silver, rag_heuristic_delta)`.
+If that tuple **strictly improves**, the run is accepted. If it **regresses**,
+the run is rejected. If it **ties**, we compare **`outcomes_checksum`** (SHA-256
+over canonical per-case outcomes: booleans, deltas, post/pre top-5 ref_ids). A
+changed checksum means per-case retrieval changed even when headline metrics
+match. If summary **and** checksum match the baseline (or baseline predates
+checksums), the run is still accepted so the rolling history can refresh the
+snapshot (eviction picks the weakest tier, then oldest among ties).
 """
 
 import argparse
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -217,6 +227,7 @@ def evaluate(
         "rag_recall_at_3_gold": round(recall_3_gold, 3),
         "rag_recall_at_5_silver": round(recall_5_silver, 3),
         "rag_heuristic_delta": delta_avg,
+        "outcomes_checksum": _outcomes_checksum(details),
         "dense_top_k": cfg.DENSE_TOP_K,
         "rerank_top_k": cfg.RERANK_TOP_K,
         "reranker_weights": {
@@ -225,6 +236,10 @@ def evaluate(
             "entity_tail_weight": cfg.ENTITY_TAIL_WEIGHT,
             "entity_tail_max": cfg.ENTITY_TAIL_MAX,
             "intent_weight": cfg.INTENT_WEIGHT,
+            "pre_rerank_weight": cfg.PRE_RERANK_WEIGHT,
+            "chapter_hint_weight": cfg.CHAPTER_HINT_WEIGHT,
+            "navamsa_align_weight": cfg.NAVAMSA_ALIGN_WEIGHT,
+            "bm25_similarity_cap": cfg.BM25_SIMILARITY_CAP,
             "length_penalty_per_100": cfg.LENGTH_PENALTY_PER_100,
             "length_penalty_threshold": cfg.LENGTH_PENALTY_THRESHOLD,
         },
@@ -240,11 +255,35 @@ def _safe_float(value, default=0.0):
         return default
 
 
-def _rank_tuple(record):
-    summary = record.get("summary", {})
+def _outcomes_checksum(details):
+    """Stable hash of per-case retrieval outcomes (not raw scores in top-5)."""
+    payload = []
+    for d in sorted(details, key=lambda x: str(x.get("case_id", ""))):
+        post_rows = d.get("post_rerank_top_5") or []
+        top5 = [x.get("ref_id") for x in post_rows]
+        pre5 = list(d.get("pre_rerank_top_5") or [])
+        payload.append(
+            {
+                "case_id": d.get("case_id"),
+                "gold_in_top_3": bool(d.get("gold_in_top_3")),
+                "silver_in_top_5": bool(d.get("silver_in_top_5")),
+                "heuristic_delta": d.get("heuristic_delta"),
+                "post_top5_ref_ids": top5,
+                "pre_top5_ref_ids": pre5,
+            }
+        )
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _rank_tuple(summary):
+    """Lexicographic rank for baseline selection and regression checks."""
+    if not summary:
+        return (-1.0, -1.0, -1e9)
     return (
         _safe_float(summary.get("rag_recall_at_3_gold")),
         _safe_float(summary.get("rag_recall_at_5_silver")),
+        _safe_float(summary.get("rag_heuristic_delta")),
     )
 
 
@@ -276,30 +315,33 @@ def save_history(history_path, records):
 def select_baseline(records):
     if not records:
         return None
-    return max(records, key=_rank_tuple)
+    return max(records, key=lambda r: _rank_tuple(r.get("summary", {})))
 
 
 def passes_guardrails(new_summary, baseline_record):
     if baseline_record is None:
         return True, "no past record found"
 
-    base = baseline_record.get("summary", {})
-    new_recall = _safe_float(new_summary.get("rag_recall_at_3_gold"))
-    base_recall = _safe_float(base.get("rag_recall_at_3_gold"))
-    new_silver = _safe_float(new_summary.get("rag_recall_at_5_silver"))
-    base_silver = _safe_float(base.get("rag_recall_at_5_silver"))
+    base_summary = baseline_record.get("summary", {})
+    t_new = _rank_tuple(new_summary)
+    t_base = _rank_tuple(base_summary)
 
-    if new_recall <= base_recall:
-        return (
-            False,
-            f"rejected: rag_recall_at_3_gold did not improve ({new_recall:.3f} <= {base_recall:.3f})",
-        )
-    if new_silver < base_silver:
-        return (
-            False,
-            f"rejected: rag_recall_at_5_silver dropped ({new_silver:.3f} < {base_silver:.3f})",
-        )
-    return True, "accepted: guardrails passed"
+    if t_new > t_base:
+        return True, f"accepted: lexicographic improvement {t_new} > {t_base}"
+
+    if t_new < t_base:
+        return False, f"rejected: regression vs baseline {t_new} < {t_base}"
+
+    chk_new = new_summary.get("outcomes_checksum")
+    chk_base = base_summary.get("outcomes_checksum")
+
+    if chk_base is None:
+        return True, "accepted: summary ties baseline; baseline has no outcomes_checksum (legacy)"
+
+    if chk_new != chk_base:
+        return True, "accepted: summary ties baseline; per-case outcomes differ (checksum)"
+
+    return True, "accepted: summary and outcomes_checksum match baseline; rotating snapshot"
 
 
 def apply_retention(records, new_record):
@@ -307,8 +349,10 @@ def apply_retention(records, new_record):
     if len(records) < MAX_HISTORY_RECORDS:
         records.append(new_record)
         return records, eviction
-    min_rank = min(_rank_tuple(r) for r in records)
-    least_good = [r for r in records if _rank_tuple(r) == min_rank]
+    min_rank = min(_rank_tuple(r.get("summary", {})) for r in records)
+    least_good = [
+        r for r in records if _rank_tuple(r.get("summary", {})) == min_rank
+    ]
     eviction = min(
         least_good,
         key=lambda r: (r.get("created_at", ""), r.get("record_id", "")),
@@ -335,10 +379,10 @@ def maybe_save_result(report, output_path, history_path):
         print("Decision: accept run because no past record exists.", flush=True)
     else:
         base_summary = baseline.get("summary", {})
+        bt = _rank_tuple(base_summary)
         print(
             f"Decision baseline: record_id={baseline.get('record_id')} "
-            f"recall_at_3={_safe_float(base_summary.get('rag_recall_at_3_gold')):.3f} "
-            f"recall_at_5_silver={_safe_float(base_summary.get('rag_recall_at_5_silver')):.3f}",
+            f"tuple=(gold,silver,delta)={bt}",
             flush=True,
         )
         print(f"Decision: {reason}", flush=True)
@@ -355,6 +399,7 @@ def maybe_save_result(report, output_path, history_path):
         "eval_type": EVAL_TYPE,
         "summary": report["summary"],
         "rank_score": round(_safe_float(report["summary"].get("rag_recall_at_3_gold")), 3),
+        "outcomes_checksum": report["summary"].get("outcomes_checksum"),
         "command_config": {"output_path": output_path},
         "report_path": "",
     }

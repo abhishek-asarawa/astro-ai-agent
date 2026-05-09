@@ -24,13 +24,16 @@ CHUNK_MAX_TOKENS = 600
 # multiple Chroma rows sharing the same ref_id (see knowledge_builder).
 MAX_CONTEXT_TOKENS_TOTAL = 1200
 
-ENTITY_WEIGHT = 0.20
+ENTITY_WEIGHT = 0.12
 ENTITY_MATCH_CAP = 3
 # Small bonus for entity overlaps beyond ENTITY_MATCH_CAP (capped), so chunks
 # that match more query entities can edge out similar-density neighbors.
 ENTITY_TAIL_WEIGHT = 0.03
 ENTITY_TAIL_MAX = 3
-INTENT_WEIGHT = 0.10
+INTENT_WEIGHT = 0.08
+# Favor dense+RRF ordering after ref_id dedupe so full-book noise (e.g. broad
+# "effects" chapters) does not swamp the correct house-specific verse.
+PRE_RERANK_WEIGHT = 0.18
 LENGTH_PENALTY_PER_100 = 0.10
 LENGTH_PENALTY_THRESHOLD = 500
 
@@ -49,6 +52,24 @@ RRF_WEIGHT_SPARSE = 1.0
 BM25_SIMILARITY_FLOOR = 0.05
 
 SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
+
+# Sharma English Vol.1: "Effects of the Nth House" chapter numbers in metadata.
+# Used at rerank to prefer the house-specific chapter when the question or chart
+# references that house (reduces cross-chapter competition after full-book ingest).
+HOUSE_EFFECTS_CHAPTER = {
+    2: 15,
+    6: 19,
+    8: 21,
+    9: 22,
+    10: 23,
+    11: 24,
+}
+CHAPTER_HINT_WEIGHT = 0.14
+# BM25-only rows use score/max(score) as a pseudo-similarity; without a cap it
+# can hit 1.0 and dominate rerank over real cosine matches.
+BM25_SIMILARITY_CAP = 0.88
+# Question mentions Navamsa/Navamsha and chunk text aligns (exact gold for some Ch.23 cases).
+NAVAMSA_ALIGN_WEIGHT = 0.16
 
 
 def estimate_tokens(text):
