@@ -28,7 +28,7 @@
 - **Ch. 21 ingest (2026-05-03):** OCR PDF pp. 255–280 (trimmed to Ch. 21 only) → `data/corpus/bphs_sharma/ch_21_effects_of_8_house.txt`; **`evaluate_rag.py` 14 cases `--no-retention`**: `1.00 / 1.00 / +0.50` (see scoreboard). Golden **`health_8th_lord_in_kendra_long_life`** uses **gold `bphs-ch21-v4-7`** (kendra + longevity block; opening `v1` often ranks 4th after rerank). **`health_diseases_from_6th_house`** chart `jupiter` moved from **house 8 → house 6** so query entities do not spuriously boost unrelated `8th_house` chunks over `bphs-ch19-v1`.
 - **Ch. 22 ingest (2026-05-03):** OCR PDF pp. **263–268** → `data/corpus/bphs_sharma/ch_22_effects_of_9_house.txt` (`Sth`→`5th`/`9th` OCR fixes; long father-death block split **v13–17** / **v18–25** so health queries are not swamped). Goldens **`family_9th_lord_exalted_father_longlife`**, **`family_9th_10th_lord_exchange_father_wealth`**. **`evaluate_rag.py` 16 cases `--no-retention`**: `1.00 / 1.00 / +0.19` (`rag_heuristic_delta` **+0.188**); **`health_ascendant_lord_with_malefics`** chart lists **all** conjunct bodies so **`Mercury`** appears in query entities and **`bphs-ch19-v6`** wins over Ch. 22 death text.
 - **Full-book RAG eval pass (2026-05-10):** **25** golden cases (prior **19** + **Ch. 14 / 16 / 17 / 18 / 20 / 25** house-coverage rows) with production `detect_intent`: accepted headline **`1.00 / 1.00 / +0.50`** (`rag_v0_20260510_085550`). **`HOUSE_EFFECTS_CHAPTER`** in [`rag_config.py`](rag_config.py) now maps **all twelve** houses to Sharma “effects” chapter numbers so rerank chapter hints apply to **1st–12th**. Earlier **19-case** report **`rag_v0_20260509_203851`** remains at **`1.00 / 1.00 / +0.67`** for apples-to-apples delta comparison on the smaller suite.
-- **Next focus** (optional): **`evaluate_rag` LLM-judge** (Tier 3); optional second-wave goldens (extra cases per house) for redundancy only.
+- **`evaluate_rag.py` LLM-judge** (Tier 3) — **DONE**: optional `--judge-model` (+ `--answer-model`, `--max-judge-cases`, `--no-answer-grounding`); shared helpers in [`eval_grounding.py`](eval_grounding.py); **retention unchanged** (retrieval tuple + `outcomes_checksum` only). **Next optional focus:** second-wave goldens (extra cases per house) for redundancy only.
 - **Ch. 23 v16 corpus fix (2026-05-03):** `debiltation` → `debilitation` in `data/corpus/bphs_sharma/ch_23_effects_of_10_house.txt`; re-ingested with stale-hash cleanup. Silver miss that remained after OCR was addressed with **hybrid retrieval + dignity synonym overlap** (see Decisions log).
 
 **Guardrails:** `evaluate_rag.py` retention uses the **lexicographic tuple + `outcomes_checksum`** (see Status snapshot). **`evaluate_career.py`** can use **`--retention-mode legacy`** (enriched keyword/template, older behavior) or **`--retention-mode rag`** (lexicographic composite: judge score → max chunk similarity → citations → RAG template). Keyword averages alone are a weak signal for generation quality; prefer grounding + judge for RAG regressions.
@@ -47,7 +47,8 @@
 | `tools/scan_bphs_vol1_chapter_starts.py` | Full-PDF scan helper for `Chapter N` headers (optional rebuild of map) | CLI |
 | `scripts/ingest_bphs_from_full_pdf_dir.py` | Batch ingest every `ch_<n>_*.txt` under a directory | CLI |
 | `rag_search.py` | Online retrieval: multi-query expansion → dense+filter → **BM25 + RRF** (optional) → **dedupe by `ref_id`** (best dense slice) → heuristic rerank (+ **entity tail** beyond cap) | `search()`, `search_for_eval()` |
-| `evaluate_rag.py` | Golden eval + **lexicographic + checksum** retention; default **`detect_intent`** (see `--golden-intent`) | `evaluate()`, CLI |
+| `evaluate_rag.py` | Golden eval + **lexicographic + checksum** retention; default **`detect_intent`** (see `--golden-intent`); optional **LLM answer + judge** (`--judge-model`, serial) | `evaluate()`, CLI |
+| `eval_grounding.py` | Shared **embedding grounding** + **JSON faithfulness judge** for eval harnesses | `score_grounding_embedding()`, `run_grounding_judge()` |
 | `data/golden/rag_eval_v0.json` | **25** hand-labeled cases (twelve-house “effects” sweep + Ch. 33 / 34 / 36 general) | — |
 | `chroma_db/` | Persistent vector store (cosine space, 768-dim) | — |
 | `rag_eval_history.json` | Accepted-runs index (max 3 records) — **local / gitignored** | — |
@@ -126,7 +127,7 @@ This phase is now complete. `rag_search.search()` is consumed by generation via 
 
 | Task | File(s) | Effort | Notes |
 | --- | --- | --- | --- |
-| LLM-as-judge faithfulness metric | `evaluate_rag.py` | M | **Partial:** `evaluate_career.py` already runs `llama3.2:3b` (or `--judge-model`) on RAG answers vs retrieved sources; extend to golden RAG eval if desired |
+| LLM-as-judge faithfulness metric | `evaluate_rag.py`, `eval_grounding.py` | M | ✅ **Done** — `evaluate_rag.py --judge-model …` (optional `--max-judge-cases`, `--answer-model`, `--no-answer-grounding`); judge metrics are **diagnostic** (not in retention tuple); `evaluate_career.py` imports shared [`eval_grounding.py`](eval_grounding.py) |
 | Cross-encoder reranker (replace heuristic) | `rag_search.py::_rerank` | L | Needs ~1 GB free RAM; keep heuristic as fallback |
 | Embedding cache for incremental re-ingest | `knowledge_builder.py` | S | Already partially solved by sha256 ID skip |
 | Multi-hop / query decomposition | `rag_search.py` | L | For "compare X vs Y" style questions |
@@ -260,6 +261,21 @@ Add `--no-retention` to skip writing to history (useful while iterating).
 
 **Intent:** by default, retrieval uses **`intent_router.detect_intent()`** (Ollama may run on ambiguous questions). **`--golden-intent`** uses golden `expected_intent` only (isolates retriever). **`--intent-model`** / **`--intent-timeout-s`** tune the router’s LLM fallback (defaults: model from env / `astro_engine`, timeout **45** s).
 
+**Optional LLM judge (faithfulness vs retrieved chunks):** runs **serially** (answer + judge per eligible case; avoids VRAM pressure). Does **not** affect `rag_eval_history.json` acceptance (retrieval metrics only).
+
+```bash
+python evaluate_rag.py \
+  --golden data/golden/rag_eval_v0.json \
+  --output rag_eval_report.json \
+  --history rag_eval_history.json \
+  --judge-model llama3.2:3b \
+  --max-judge-cases 2
+```
+
+- **`--answer-model`**: override the main Ollama model for the generated answer (default: same as `ASTRO_MODEL_NAME` / engine).
+- **`--no-answer-grounding`**: skip `nomic-embed-text` similarity vs chunks (faster).
+- Omit **`--judge-model`** for retrieval-only eval (default).
+
 ### Career eval (baseline / enriched / RAG + grounding + judge)
 ```bash
 source venv/bin/activate
@@ -351,7 +367,8 @@ Re-run `evaluate_rag.py` after any tuning to verify guardrails still pass.
 - "How are long verses split for indexing?" → `knowledge_builder.py::_expand_oversize_chunks` (threshold `rag_config.CHUNK_MAX_TOKENS`)
 - "What does the golden file look like?" → `data/golden/rag_eval_v0.json`
 - "How does RAG eval retention work?" → `evaluate_rag.py::passes_guardrails`, `maybe_save_result`, `_outcomes_checksum`
-- "Career RAG grounding / judge / retention?" → `evaluate_career.py` (`score_grounding_embedding()`, `run_grounding_judge()`, `passes_guardrails()`, `select_global_baseline()`)
+- "Career RAG grounding / judge / retention?" → `evaluate_career.py` (`passes_guardrails()`, `select_global_baseline()`); shared judge/embedding → [`eval_grounding.py`](eval_grounding.py)
+- "RAG golden LLM judge?" → `evaluate_rag.py` (`--judge-model`), [`eval_grounding.py`](eval_grounding.py)
 
 ---
 

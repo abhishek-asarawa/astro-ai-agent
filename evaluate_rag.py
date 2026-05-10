@@ -3,6 +3,11 @@
 Reads a golden dataset of (question, gold_citations, silver_citations)
 cases, runs each through `rag_search.search_for_eval`, and scores three metrics.
 
+Optional **Tier 3** path: ``--judge-model`` generates a RAG-grounded answer per case
+(using the same retrieved top-``RERANK_TOP_K`` chunks as production) and runs the shared
+JSON faithfulness judge from ``eval_grounding``; metrics are diagnostic only (retention
+still uses gold@3, silver@5, heuristic delta + ``outcomes_checksum``).
+
 By default the retriever intent matches production: `intent_router.detect_intent(question)`.
 Pass ``golden_intent=True`` (CLI: ``--golden-intent``) to use the golden file's
 ``expected_intent`` only and isolate the retriever from routing.
@@ -38,7 +43,13 @@ from pathlib import Path
 from statistics import mean
 
 import rag_config as cfg
-from astro_engine import resolve_ollama_config
+from astro_engine import (
+    append_classical_references_block,
+    build_prompt_for_intent,
+    query_ollama_once,
+    resolve_ollama_config,
+)
+from eval_grounding import run_grounding_judge, score_grounding_embedding
 from intent_router import detect_intent
 from rag_search import search_for_eval
 
@@ -49,6 +60,8 @@ DEFAULT_HISTORY_PATH = "rag_eval_history.json"
 DEFAULT_RECORDS_DIR = "rag_eval_records"
 EVAL_TYPE = "rag_v0"
 MAX_HISTORY_RECORDS = 3
+# Stored JSON only; full answer is still sent to the judge.
+MODEL_ANSWER_JSON_MAX_CHARS = 2000
 
 
 def load_golden(path):
@@ -102,7 +115,62 @@ def _compact_intent_detection(info):
     return out
 
 
-def evaluate_case(case, db_path, *, golden_intent, intent_model, intent_timeout_s, intent_num_ctx):
+def chart_context_to_minimal_features(chart_context):
+    """Map golden ``chart_context`` into the structure ``build_prompt_for_intent`` expects.
+
+    House lordships and dashas are empty so domain prompts still render; judge focuses on
+    classical claims vs retrieved chunks, not full-chart fidelity.
+    """
+    ctx = chart_context or {}
+    lagna = ctx.get("lagna", "Unknown")
+    if not isinstance(lagna, str):
+        lagna = str(lagna)
+    planets = {}
+    dignities = {}
+    for key, payload in ctx.items():
+        if key == "lagna" or not isinstance(payload, dict):
+            continue
+        pname = (key[:1].upper() + key[1:].lower()) if key else key
+        sign = payload.get("sign") or payload.get("rashi") or "Unknown"
+        planets[pname] = {
+            "rashi": sign,
+            "degrees": 0.0,
+            "nakshatra": "N/A",
+        }
+        dig = payload.get("dignity")
+        if dig:
+            ds = str(dig).strip()
+            if not ds.startswith("["):
+                ds = f"[{ds}]"
+            dignities[pname] = ds
+    return {
+        "lagna": {"rashi": lagna, "degrees": 0.0, "nakshatra": "N/A"},
+        "planets": planets,
+        "planetary_dignities": dignities,
+        "house_lordships": {},
+        "dasha_timeline": [],
+        "active_dasha": {},
+        "next_dasha": {},
+    }
+
+
+def evaluate_case(
+    case,
+    db_path,
+    *,
+    golden_intent,
+    intent_model,
+    intent_timeout_s,
+    intent_num_ctx,
+    judge_model=None,
+    judge_eligible=False,
+    answer_model=None,
+    answer_timeout_s=120,
+    answer_num_ctx=None,
+    judge_timeout_s=90,
+    judge_num_ctx=8192,
+    rag_grounding=True,
+):
     question = case["question"]
     expected_intent = case.get("expected_intent", "general")
     chart_facts = case.get("chart_context")
@@ -173,6 +241,84 @@ def evaluate_case(case, db_path, *, golden_intent, intent_model, intent_timeout_
         "post_rerank_top_5": top_5_view,
         "pre_rerank_top_5": pre_order[:cfg.SILVER_TOP_K],
     }
+
+    if judge_model and not judge_eligible:
+        row["llm_judge_skipped"] = True
+        return row
+
+    if judge_model and judge_eligible:
+        row["rag_active"] = False
+        row["grounding_max_sim"] = None
+        row["grounding_mean_sim"] = None
+        row["grounding_error"] = None
+        row["judge_grounding"] = None
+        row["judge_supported_ratio"] = None
+        row["judge_note"] = ""
+        row["judge_error"] = None
+        row["model_answer"] = None
+        row["answer_error"] = None
+
+        chunks_for_prompt = chunks[: cfg.RERANK_TOP_K]
+        if not chunks_for_prompt:
+            print(f"[judge] skipping case {row['case_id']}: no chunks retrieved", flush=True)
+            row["judge_error"] = "no_chunks"
+            return row
+
+        features = chart_context_to_minimal_features(chart_facts)
+        base_prompt = build_prompt_for_intent(features, question, used_intent)
+        enriched_prompt, allowed_refs, included, rag_active = append_classical_references_block(
+            base_prompt, chunks_for_prompt, used_intent
+        )
+        row["rag_active"] = rag_active
+        if not rag_active or not included:
+            print(f"[judge] skipping case {row['case_id']}: no RAG block / included chunks", flush=True)
+            row["judge_error"] = "no_chunks"
+            return row
+
+        try:
+            response = query_ollama_once(
+                enriched_prompt,
+                temperature=0.2,
+                timeout_s=answer_timeout_s,
+                model_name=answer_model,
+                allowed_refs=allowed_refs,
+                num_ctx=answer_num_ctx,
+            )
+        except Exception as exc:
+            row["answer_error"] = str(exc)
+            response = ""
+
+        row["model_answer"] = (response or "")[:MODEL_ANSWER_JSON_MAX_CHARS]
+
+        if rag_grounding and included and allowed_refs:
+            g = score_grounding_embedding(response, included)
+            row["grounding_max_sim"] = g["grounding_max_sim"]
+            row["grounding_mean_sim"] = g["grounding_mean_sim"]
+            if g.get("grounding_error"):
+                row["grounding_error"] = g["grounding_error"]
+        elif not rag_grounding:
+            row["grounding_max_sim"] = None
+            row["grounding_mean_sim"] = None
+
+        if judge_model and included and allowed_refs:
+            j = run_grounding_judge(
+                response,
+                included,
+                judge_model=judge_model,
+                timeout_s=judge_timeout_s,
+                num_ctx=judge_num_ctx,
+            )
+            row.update(
+                {
+                    "judge_grounding": j.get("judge_grounding"),
+                    "judge_supported_ratio": j.get("judge_supported_ratio"),
+                    "judge_note": j.get("judge_note"),
+                    "judge_error": j.get("judge_error"),
+                }
+            )
+            if j.get("judge_raw"):
+                row["judge_raw"] = j["judge_raw"]
+
     return row
 
 
@@ -184,22 +330,47 @@ def evaluate(
     intent_model=None,
     intent_timeout_s=45,
     intent_num_ctx=None,
+    judge_model=None,
+    max_judge_cases=None,
+    answer_model=None,
+    answer_timeout_s=120,
+    answer_num_ctx=None,
+    judge_timeout_s=90,
+    judge_num_ctx=8192,
+    rag_grounding=True,
 ):
     cases = load_golden(golden_path)
     if not cases:
         return {"summary": {}, "details": []}
 
-    details = [
-        evaluate_case(
-            case,
-            db_path,
-            golden_intent=golden_intent,
-            intent_model=intent_model,
-            intent_timeout_s=intent_timeout_s,
-            intent_num_ctx=intent_num_ctx,
+    n_cases = len(cases)
+    details = []
+    for i, case in enumerate(cases):
+        judge_eligible = bool(judge_model) and (max_judge_cases is None or i < max_judge_cases)
+        if judge_model:
+            print(
+                f"[{i + 1}/{n_cases}] case={case.get('case_id', 'unknown')} "
+                f"llm_judge={'on' if judge_eligible else 'skipped'}",
+                flush=True,
+            )
+        details.append(
+            evaluate_case(
+                case,
+                db_path,
+                golden_intent=golden_intent,
+                intent_model=intent_model,
+                intent_timeout_s=intent_timeout_s,
+                intent_num_ctx=intent_num_ctx,
+                judge_model=judge_model,
+                judge_eligible=judge_eligible,
+                answer_model=answer_model,
+                answer_timeout_s=answer_timeout_s,
+                answer_num_ctx=answer_num_ctx,
+                judge_timeout_s=judge_timeout_s,
+                judge_num_ctx=judge_num_ctx,
+                rag_grounding=rag_grounding,
+            )
         )
-        for case in cases
-    ]
 
     n = len(details)
     recall_3_gold = sum(1 for d in details if d["gold_in_top_3"]) / n
@@ -244,6 +415,40 @@ def evaluate(
             "length_penalty_threshold": cfg.LENGTH_PENALTY_THRESHOLD,
         },
     }
+
+    if judge_model:
+        summary["rag_judge_model"] = judge_model
+        summary["rag_answer_model"] = answer_model
+        summary["rag_llm_judge_serial"] = True
+        if max_judge_cases is not None:
+            summary["rag_max_judge_cases"] = max_judge_cases
+        gmax_vals = [
+            d["grounding_max_sim"]
+            for d in details
+            if d.get("grounding_max_sim") is not None
+        ]
+        gmean_vals = [
+            d["grounding_mean_sim"]
+            for d in details
+            if d.get("grounding_mean_sim") is not None
+        ]
+        if gmax_vals:
+            summary["rag_grounding_max_sim_avg"] = round(mean(gmax_vals), 4)
+            summary["rag_grounding_mean_sim_avg"] = round(mean(gmean_vals), 4)
+        judge_vals = [
+            d["judge_grounding"] for d in details if d.get("judge_grounding") is not None
+        ]
+        if judge_vals:
+            summary["rag_judge_grounding_avg"] = round(mean(judge_vals), 3)
+        ratio_vals = [
+            d["judge_supported_ratio"]
+            for d in details
+            if d.get("judge_supported_ratio") is not None
+        ]
+        if ratio_vals:
+            summary["rag_judge_supported_ratio_avg"] = round(mean(ratio_vals), 3)
+        if rag_grounding:
+            summary["rag_grounding_embed_model"] = cfg.EMBED_MODEL
 
     return {"summary": summary, "details": details}
 
@@ -455,6 +660,54 @@ def parse_args():
         default=None,
         help="Ollama num_ctx for intent LLM fallback (default: ASTRO_NUM_CTX env or engine default).",
     )
+    parser.add_argument(
+        "--judge-model",
+        type=str,
+        default=None,
+        help="Optional Ollama model for JSON faithfulness judge on RAG answers (e.g. llama3.2:3b). "
+        "Runs serially (answer + judge per eligible case) to reduce VRAM pressure.",
+    )
+    parser.add_argument(
+        "--max-judge-cases",
+        type=int,
+        default=None,
+        help="Only run answer+judge on the first N golden cases (smoke / cost control). Default: all cases.",
+    )
+    parser.add_argument(
+        "--answer-model",
+        type=str,
+        default=None,
+        help="Ollama model for RAG answer generation when --judge-model is set (default: ASTRO_MODEL_NAME / engine).",
+    )
+    parser.add_argument(
+        "--answer-timeout-s",
+        type=int,
+        default=None,
+        help="Read timeout seconds for answer model (default: ASTRO_OLLAMA_TIMEOUT_S / engine).",
+    )
+    parser.add_argument(
+        "--answer-num-ctx",
+        type=int,
+        default=None,
+        help="Context window for answer generate call (default: ASTRO_NUM_CTX / engine).",
+    )
+    parser.add_argument(
+        "--judge-timeout-s",
+        type=int,
+        default=90,
+        help="Read timeout seconds for judge model (default: 90).",
+    )
+    parser.add_argument(
+        "--judge-num-ctx",
+        type=int,
+        default=8192,
+        help="Context window for judge generate call (default: 8192).",
+    )
+    parser.add_argument(
+        "--no-answer-grounding",
+        action="store_true",
+        help="When using --judge-model, skip embedding similarity vs retrieved chunks (faster).",
+    )
     return parser.parse_args()
 
 
@@ -465,11 +718,25 @@ if __name__ == "__main__":
         timeout_s=None,
         num_ctx=args.intent_num_ctx,
     )
+    answer_model, answer_timeout_s, answer_num_ctx = resolve_ollama_config(
+        model_name=args.answer_model,
+        timeout_s=args.answer_timeout_s,
+        num_ctx=args.answer_num_ctx,
+    )
     print(
         f"Evaluating RAG: golden={args.golden} db={args.db_path} embed={cfg.EMBED_MODEL} "
         f"golden_intent={args.golden_intent} intent_num_ctx={intent_num_ctx}",
         flush=True,
     )
+    if args.judge_model:
+        n_golden = len(load_golden(args.golden))
+        eligible = n_golden if args.max_judge_cases is None else min(n_golden, max(0, args.max_judge_cases))
+        print(
+            f"LLM judge: model={args.judge_model} answer_model={answer_model} "
+            f"(serial ~{2 * eligible} Ollama calls for {eligible} case(s); "
+            f"max_judge_cases={args.max_judge_cases})",
+            flush=True,
+        )
     report = evaluate(
         args.golden,
         args.db_path,
@@ -477,6 +744,14 @@ if __name__ == "__main__":
         intent_model=args.intent_model,
         intent_timeout_s=args.intent_timeout_s,
         intent_num_ctx=intent_num_ctx,
+        judge_model=args.judge_model,
+        max_judge_cases=args.max_judge_cases,
+        answer_model=answer_model,
+        answer_timeout_s=answer_timeout_s,
+        answer_num_ctx=answer_num_ctx,
+        judge_timeout_s=max(15, args.judge_timeout_s),
+        judge_num_ctx=max(1024, args.judge_num_ctx),
+        rag_grounding=not args.no_answer_grounding,
     )
     Path(args.output).write_text(json.dumps(report, indent=2), encoding="utf-8")
     if not args.no_retention:

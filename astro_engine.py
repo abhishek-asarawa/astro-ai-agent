@@ -280,7 +280,23 @@ def _features_to_chart_facts(features):
     return chart_facts
 
 
-def _render_rag_block(chunks, max_tokens):
+def _rag_citation_template_labels(intent):
+    """Section labels matching build_*_prompt (for CitationRules). Default career if intent is None."""
+    if intent is None:
+        key = "career"
+    else:
+        key = (intent or "general").strip().lower() or "general"
+    labels = {
+        "career": ("CareerSummary", "CareerRisk", "CareerOpportunity"),
+        "health": ("HealthSummary", "HealthRisk", "HealthOpportunity"),
+        "wealth": ("WealthSummary", "WealthRisk", "WealthOpportunity"),
+        "family": ("FamilySummary", "FamilyRisk", "FamilyOpportunity"),
+        "general": ("OverallSummary", "OverallRisk", "OverallOpportunity"),
+    }
+    return labels.get(key, labels["general"])
+
+
+def _render_rag_block(chunks, max_tokens, intent=None):
     used_tokens = 0
     lines = ["ClassicalReferences:"]
     allowed_refs = set()
@@ -297,12 +313,14 @@ def _render_rag_block(chunks, max_tokens):
         allowed_refs.add(chunk.ref_id)
         lines.append(f"[ref:{chunk.ref_id}]: {text}")
 
+    summary_l, risk_l, opp_l = _rag_citation_template_labels(intent)
+    template_hint = f"{summary_l}/Evidence/{risk_l}/{opp_l}/Confidence"
     allowed_list = ", ".join(f"[ref:{ref_id}]" for ref_id in sorted(allowed_refs))
     lines.extend(
         [
             "",
             "CitationRules:",
-            "- Keep the exact response template unchanged (CareerSummary/Evidence/CareerRisk/CareerOpportunity/Confidence).",
+            f"- Keep the exact response template unchanged ({template_hint}).",
             "- Every Evidence bullet MUST end with at least one [ref:...] tag from ClassicalReferences.",
             "- Include at least 2 Evidence bullets that each cite a reference.",
             "- Use ONLY the [ref:...] tags listed above. Do NOT invent any [ref:...] tag or verse.",
@@ -312,6 +330,32 @@ def _render_rag_block(chunks, max_tokens):
         ]
     )
     return "\n".join(lines), allowed_refs, included
+
+
+def append_classical_references_block(base_prompt, chunks, intent):
+    """Insert ClassicalReferences + CitationRules before the final ``Question:`` (same as PR1 RAG splice).
+
+    Returns ``(enriched_prompt, allowed_refs, included_chunks, rag_active)``.
+    If ``chunks`` is empty or token packing yields no refs, returns
+    ``(base_prompt, set(), [], False)``.
+    """
+    resolved_intent = (intent or "general").strip().lower() or "general"
+    if not chunks:
+        return base_prompt, set(), [], False
+    rag_block, allowed_refs, included = _render_rag_block(
+        chunks,
+        max_tokens=cfg.MAX_CONTEXT_TOKENS_TOTAL,
+        intent=resolved_intent,
+    )
+    if not allowed_refs:
+        return base_prompt, set(), [], False
+    marker = "\n\nQuestion:"
+    if marker in base_prompt:
+        prefix, suffix = base_prompt.rsplit(marker, 1)
+        enriched_prompt = f"{prefix}\n\n{rag_block}{marker}{suffix}"
+    else:
+        enriched_prompt = f"{base_prompt}\n\n{rag_block}"
+    return enriched_prompt, allowed_refs, included, True
 
 
 def _strip_unknown_refs(text, allowed_refs):
@@ -369,6 +413,7 @@ def build_rag_enriched_prompt(features, user_question, intent):
     rag_block, allowed_refs, included = _render_rag_block(
         retrieved,
         max_tokens=cfg.MAX_CONTEXT_TOKENS_TOTAL,
+        intent=resolved_intent,
     )
     if not allowed_refs:
         return {
