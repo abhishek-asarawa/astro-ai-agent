@@ -12,6 +12,7 @@ from astro_engine import (
     resolve_ollama_config,
 )
 from intent_router import detect_intent
+from text_utils import strip_reasoning_blocks
 from utils import CITY_COORDINATES
 
 
@@ -200,9 +201,7 @@ def main():
             try:
                 intent_info = detect_intent(
                     question=cleaned_question,
-                    model_name=resolved_model,
                     timeout_s=min(45, resolved_timeout),
-                    num_ctx=resolved_num_ctx,
                 )
             except Exception:
                 intent_info = {
@@ -241,7 +240,8 @@ def main():
                         error_code = possible_error
                         break
                     final_answer += text_chunk
-                    stream_placeholder.markdown(final_answer + "▌")
+                    stream_placeholder.markdown(strip_reasoning_blocks(final_answer) + "▌")
+            final_answer = strip_reasoning_blocks(final_answer)
             if final_answer:
                 stream_placeholder.markdown(final_answer)
 

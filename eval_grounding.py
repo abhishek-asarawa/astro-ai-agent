@@ -10,19 +10,12 @@ import re
 
 import rag_search
 from astro_engine import query_ollama_once
-
-_REASONING_BLOCK_RE = re.compile(
-    r"(?:<think>.*?</think>|<redacted_reasoning>.*?</redacted_reasoning>)",
-    re.IGNORECASE | re.DOTALL,
-)
+from text_utils import strip_reasoning_blocks
 
 
 def text_for_scoring(raw_response: str) -> str:
     """Drop common reasoning wrappers so embedding/judge see the final answer."""
-    if not raw_response:
-        return ""
-    text = _REASONING_BLOCK_RE.sub("", raw_response)
-    return text.strip()
+    return strip_reasoning_blocks(raw_response)
 
 
 def _cosine_similarity(vec_a, vec_b) -> float:

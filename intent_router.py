@@ -4,6 +4,9 @@ from astro_engine import query_ollama_once
 
 SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
 
+# Small model for JSON intent only — never use the main generation model here.
+INTENT_CLASSIFIER_MODEL = "llama3.2:3b"
+
 INTENT_KEYWORDS = {
     "career": [
         "career",
@@ -135,7 +138,7 @@ def _extract_intent_from_text(text):
     return None
 
 
-def _classify_intent_with_llm(question, model_name=None, timeout_s=45, num_ctx=None):
+def _classify_intent_with_llm(question, timeout_s=45, num_ctx=None):
     classifier_prompt = (
         "You classify user astrology questions into one intent.\n"
         "Allowed intents: career, health, wealth, family, general.\n"
@@ -149,8 +152,8 @@ def _classify_intent_with_llm(question, model_name=None, timeout_s=45, num_ctx=N
         classifier_prompt,
         temperature=0.0,
         timeout_s=timeout_s,
-        model_name=model_name,
-        num_ctx=num_ctx,
+        model_name=INTENT_CLASSIFIER_MODEL,
+        num_ctx=num_ctx or 4096,
     )
     return _extract_intent_from_text(text)
 
@@ -169,7 +172,6 @@ def detect_intent(question, model_name=None, timeout_s=45, num_ctx=None):
 
     llm_intent = _classify_intent_with_llm(
         question=question,
-        model_name=model_name,
         timeout_s=timeout_s,
         num_ctx=num_ctx,
     )

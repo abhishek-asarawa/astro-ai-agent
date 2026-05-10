@@ -15,19 +15,23 @@ import rag_search
 
 # --- CONFIGURATION ---
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "deepseek-r1:14b"
+MODEL_NAME = "qwen2.5:7b-instruct"
+DEEP_MODEL_NAME = "deepseek-r1:14b"
 DEFAULT_TIMEOUT_S = 120
 DEFAULT_NUM_CTX = 16384
 REF_TAG_RE = re.compile(r"\[ref:([^\]]+)\]")
 
 
-def resolve_ollama_config(model_name=None, timeout_s=None, num_ctx=None):
+def resolve_ollama_config(model_name=None, timeout_s=None, num_ctx=None, deep=False):
     """Resolve model, timeout, and context window from args/env/defaults."""
+    env_deep = (os.getenv("ASTRO_DEEP_MODEL") or "").strip().lower()
+    use_deep = bool(deep) or env_deep in ("1", "true", "yes")
+    default_model = DEEP_MODEL_NAME if use_deep else MODEL_NAME
     env_model = os.getenv("ASTRO_MODEL_NAME")
     env_timeout = os.getenv("ASTRO_OLLAMA_TIMEOUT_S")
     env_num_ctx = os.getenv("ASTRO_NUM_CTX")
 
-    resolved_model = model_name or env_model or MODEL_NAME
+    resolved_model = model_name or env_model or default_model
     resolved_timeout = timeout_s
     if resolved_timeout is None:
         if env_timeout and env_timeout.isdigit():
@@ -678,6 +682,11 @@ def parse_args():
         help="Ollama context window. Defaults to ASTRO_NUM_CTX env or engine default (16384).",
     )
     parser.add_argument(
+        "--deep",
+        action="store_true",
+        help=f"Use {DEEP_MODEL_NAME} instead of the default {MODEL_NAME}.",
+    )
+    parser.add_argument(
         "--no-preview",
         action="store_true",
         help="Skip prompt preview before model call.",
@@ -705,10 +714,12 @@ if __name__ == "__main__":
         model_name=args.model,
         timeout_s=args.timeout,
         num_ctx=args.num_ctx,
+        deep=args.deep,
     )
     print(
         f"Using model={model_name} timeout_s={timeout_s} num_ctx={num_ctx} "
         f"(ASTRO_MODEL_NAME={os.getenv('ASTRO_MODEL_NAME', '') or 'unset'}, "
+        f"ASTRO_DEEP_MODEL={os.getenv('ASTRO_DEEP_MODEL', '') or 'unset'}, "
         f"ASTRO_OLLAMA_TIMEOUT_S={os.getenv('ASTRO_OLLAMA_TIMEOUT_S', '') or 'unset'}, "
         f"ASTRO_NUM_CTX={os.getenv('ASTRO_NUM_CTX', '') or 'unset'})",
         flush=True,
@@ -727,9 +738,7 @@ if __name__ == "__main__":
 
         detected_intent = detect_intent(
             question=args.question,
-            model_name=model_name,
             timeout_s=min(45, timeout_s),
-            num_ctx=num_ctx,
         ).get("intent", "general")
         rag_bundle = build_rag_enriched_prompt(features, args.question, detected_intent)
         prompt = rag_bundle["prompt"]
