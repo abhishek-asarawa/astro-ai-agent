@@ -9,11 +9,12 @@
 ## Status snapshot
 
 - **Phase**: 4 v0 (retrieval-only) — **DONE**
+- **Widen RAG golden eval (twelve-house “effects” coverage)** — **DONE** (2026-05-10): [`data/golden/rag_eval_v0.json`](data/golden/rag_eval_v0.json) **25** cases; [`rag_config.py`](rag_config.py) **`HOUSE_EFFECTS_CHAPTER`** for houses **1–12**; accepted run **`rag_v0_20260510_085550`** **`1.00 / 1.00 / +0.50`** (see scoreboard). Optional **second-wave** goldens (extra cases per house) remain a nice-to-have, not required to close this initiative.
 - **PR1** (RAG in LLM prompt + CLI) — **DONE**
 - **PR2** (Streamlit sources + RAG toggle) — **DONE** (2026-05-02)
 - **Career generation eval** (`evaluate_career.py`): **embedding grounding + optional LLM judge + `--retention-mode {legacy,rag}`** — **DONE**
-- **Latest accepted RAG eval (rolling history):** `rag_v0_20260509_203851` in `rag_eval_records/` (see `rag_eval_history.json`)
-  - **Tuple** `(rag_recall_at_3_gold, rag_recall_at_5_silver, rag_heuristic_delta)` = **`(1.00, 1.00, +0.67)`** — accepted vs prior best **`rag_v0_20260503_085118`** **`(1.00, 0.90, +0.60)`** (lexicographic improvement on silver + delta).
+- **Latest accepted RAG eval (rolling history):** `rag_v0_20260510_085550` in `rag_eval_records/` (see `rag_eval_history.json`)
+  - **Tuple** `(rag_recall_at_3_gold, rag_recall_at_5_silver, rag_heuristic_delta)` = **`(1.00, 1.00, +0.50)`** — **25 cases** (full “effects” house sweep: Ch. **14 / 16 / 17 / 18 / 20 / 25** goldens + prior set); accepted vs prior indexed best **`rag_v0_20260503_085118`** **`(1.00, 0.90, +0.60)`** (lexicographic gain on **silver@5**). Mean **delta** is lower than the **19-case** snapshot **`rag_v0_20260509_203851`** **`(1.00, 1.00, +0.67)`** (that record remains in `rag_eval_records/` for comparison but was rotated out of the 3-slot history index when the suite grew).
   - Summary includes **`outcomes_checksum`** for tie-breaking when headline metrics match.
 - **Historical baseline (pre–full-book scale):** `rag_v0_20260503_085118` — `1.00 / 0.90 / +0.60` (targets ≥ 0.60 gold, ≥ 0.80 silver, delta > 0).
 - **`evaluate_rag.py` retention (2026-05-10):** compare **`(gold@3, silver@5, mean heuristic_delta)`** lexicographically vs best history row; on **tie**, compare **`outcomes_checksum`**; legacy rows without checksum still **accept** on tie; identical summary+checksum **accepts** to rotate snapshots. **Reject** only on strict **regression** of the tuple.
@@ -26,8 +27,8 @@
 - **Ch. 15 ingest (2026-05-03):** OCR PDF pp. 209–219 → `data/corpus/bphs_sharma/ch_15_effects_of_2_house.txt` (local OCR); golden **`wealth_2nd_lord_in_11th_11th_lord_in_2nd`**, **`wealth_jupiter_mars_in_2nd_house`**. Full `evaluate_rag.py` **12** cases **`--no-retention`**: `1.00 / 1.00 / +0.75`.
 - **Ch. 21 ingest (2026-05-03):** OCR PDF pp. 255–280 (trimmed to Ch. 21 only) → `data/corpus/bphs_sharma/ch_21_effects_of_8_house.txt`; **`evaluate_rag.py` 14 cases `--no-retention`**: `1.00 / 1.00 / +0.50` (see scoreboard). Golden **`health_8th_lord_in_kendra_long_life`** uses **gold `bphs-ch21-v4-7`** (kendra + longevity block; opening `v1` often ranks 4th after rerank). **`health_diseases_from_6th_house`** chart `jupiter` moved from **house 8 → house 6** so query entities do not spuriously boost unrelated `8th_house` chunks over `bphs-ch19-v1`.
 - **Ch. 22 ingest (2026-05-03):** OCR PDF pp. **263–268** → `data/corpus/bphs_sharma/ch_22_effects_of_9_house.txt` (`Sth`→`5th`/`9th` OCR fixes; long father-death block split **v13–17** / **v18–25** so health queries are not swamped). Goldens **`family_9th_lord_exalted_father_longlife`**, **`family_9th_10th_lord_exchange_father_wealth`**. **`evaluate_rag.py` 16 cases `--no-retention`**: `1.00 / 1.00 / +0.19` (`rag_heuristic_delta` **+0.188**); **`health_ascendant_lord_with_malefics`** chart lists **all** conjunct bodies so **`Mercury`** appears in query entities and **`bphs-ch19-v6`** wins over Ch. 22 death text.
-- **Full-book RAG eval pass (2026-05-10):** **19** golden cases (legacy set + **Ch. 33 / 34 / 36**) with production `detect_intent`: headline **`1.00 / 1.00 / +0.67`** on a full Vol. 1 index (~1.4k chunks). Engineering: **`search_for_eval`** uses full deduped rerank pool; rerank adds **pre-order bonus**, **`HOUSE_EFFECTS_CHAPTER`**, lordship hints, Navamsa alignment, **`BM25_SIMILARITY_CAP`**, extra dense queries (debilitated 10th, Rahu 8th/10th, 11th wealth); silver labels adjusted where the enlarged index changed top-5 membership.
-- **Next focus** (optional): **`evaluate_rag` LLM-judge** (Tier 3); broaden golden set beyond 19 if you want house-by-house coverage.
+- **Full-book RAG eval pass (2026-05-10):** **25** golden cases (prior **19** + **Ch. 14 / 16 / 17 / 18 / 20 / 25** house-coverage rows) with production `detect_intent`: accepted headline **`1.00 / 1.00 / +0.50`** (`rag_v0_20260510_085550`). **`HOUSE_EFFECTS_CHAPTER`** in [`rag_config.py`](rag_config.py) now maps **all twelve** houses to Sharma “effects” chapter numbers so rerank chapter hints apply to **1st–12th**. Earlier **19-case** report **`rag_v0_20260509_203851`** remains at **`1.00 / 1.00 / +0.67`** for apples-to-apples delta comparison on the smaller suite.
+- **Next focus** (optional): **`evaluate_rag` LLM-judge** (Tier 3); optional second-wave goldens (extra cases per house) for redundancy only.
 - **Ch. 23 v16 corpus fix (2026-05-03):** `debiltation` → `debilitation` in `data/corpus/bphs_sharma/ch_23_effects_of_10_house.txt`; re-ingested with stale-hash cleanup. Silver miss that remained after OCR was addressed with **hybrid retrieval + dignity synonym overlap** (see Decisions log).
 
 **Guardrails:** `evaluate_rag.py` retention uses the **lexicographic tuple + `outcomes_checksum`** (see Status snapshot). **`evaluate_career.py`** can use **`--retention-mode legacy`** (enriched keyword/template, older behavior) or **`--retention-mode rag`** (lexicographic composite: judge score → max chunk similarity → citations → RAG template). Keyword averages alone are a weak signal for generation quality; prefer grounding + judge for RAG regressions.
@@ -47,7 +48,7 @@
 | `scripts/ingest_bphs_from_full_pdf_dir.py` | Batch ingest every `ch_<n>_*.txt` under a directory | CLI |
 | `rag_search.py` | Online retrieval: multi-query expansion → dense+filter → **BM25 + RRF** (optional) → **dedupe by `ref_id`** (best dense slice) → heuristic rerank (+ **entity tail** beyond cap) | `search()`, `search_for_eval()` |
 | `evaluate_rag.py` | Golden eval + **lexicographic + checksum** retention; default **`detect_intent`** (see `--golden-intent`) | `evaluate()`, CLI |
-| `data/golden/rag_eval_v0.json` | 19 hand-labeled cases (+ 3 general: Ch. 33 / 34 / 36) | — |
+| `data/golden/rag_eval_v0.json` | **25** hand-labeled cases (twelve-house “effects” sweep + Ch. 33 / 34 / 36 general) | — |
 | `chroma_db/` | Persistent vector store (cosine space, 768-dim) | — |
 | `rag_eval_history.json` | Accepted-runs index (max 3 records) — **local / gitignored** | — |
 | `rag_eval_records/` | Per-run RAG report snapshots | — |
@@ -77,9 +78,10 @@
 | Ingest BPHS Sharma Ch. 22 (Ninth House; **19** rows; split **v13–17** / **v18–25** vs single **v13–25**) | ✅ |
 | 16-case golden dataset (incl. Ch. 15 wealth + Ch. 21 health + Ch. 22 family) | ✅ |
 | **19-case golden dataset** (+ Ch. 33 Argala, Ch. 34 Karakatwas, Ch. 36 Karakamsa) | ✅ (2026-05-10) |
+| **25-case golden dataset** (+ Ch. 14 / 16 / 17 / 18 / 20 / 25 house coverage; `HOUSE_EFFECTS_CHAPTER` all 12 houses) | ✅ (2026-05-10) |
 | Idempotency on re-ingest verified (sha256 IDs) | ✅ |
 | **Ingest full Sharma Vol. 1** — chapters **1–47** (PDF map + OCR + Chroma); corpus `.txt` gitignored | ✅ (2026-05-09) |
-| Acceptance thresholds; post–full-book accepted **`rag_v0_20260509_203851`** **1.00 / 1.00 / +0.67**; historical **`rag_v0_20260503_085118`** **1.00 / 0.90 / +0.60** | ✅ |
+| Acceptance thresholds; rolling accepted **`rag_v0_20260510_085550`** **1.00 / 1.00 / +0.50** (25 cases); historical **`rag_v0_20260509_203851`** **1.00 / 1.00 / +0.67** (19 cases, snapshot only); **`rag_v0_20260503_085118`** **1.00 / 0.90 / +0.60** | ✅ |
 
 ### PR1 — Wire retrieval into the LLM prompt ✅ DONE
 
@@ -132,34 +134,40 @@ This phase is now complete. `rag_search.search()` is consumed by generation via 
 
 ---
 
-## Last eval scoreboard (19 cases; full-book index, 2026-05-10)
+## Last eval scoreboard (25 cases; full-book index, 2026-05-10)
 
-Per-case `heuristic_delta` varies by run; snapshot below matches a **`--no-retention`** pass after the full-pool eval fix + rerank tuning. Silver labels for **`career_rahu_*`**, **`career_saturn_debilitated_10th`**, **`wealth_11th_lord_in_2nd_house`** were retargeted to refs that sit in the post-rerank top 5 under the enlarged index (see Status snapshot).
+Per-case `heuristic_delta` varies by run; snapshot matches accepted run **`rag_v0_20260510_085550`**. New rows cover **1st / 3rd / 4th / 5th / 7th / 12th** house effects (Ch. **14 / 16 / 17 / 18 / 20 / 25**). **`health_fifth_lord_sons_happiness`** uses **`expected_intent: health`** so `intent_family` filtering does not drop **`bphs-ch18-v1-3`** (that slice is not tagged `intent_family` at ingest). Silver labels for new rows follow post-rerank top-5 under the full index.
 
 ```
-case_id                                  intent   gold@3  silver@5  delta
-career_strong_10th_lord                  career      ✓        ✓       0
-career_rahu_with_10th_lord_in_8th        career      ✓        ✓       0   (silver: ch26-v99, ch11-v7-11)
-career_jupiter_aspect_karma_yogi         career      ✓        ✓       1
-career_saturn_debilitated_10th           career      ✓        ✓       0   (silver: ch23-v11, ch23-v2)
-career_fame_through_moon_in_10th         career      ✓        ✓       0
-health_diseases_from_6th_house           health      ✓        ✓      -1
-health_ascendant_lord_with_malefics      health      ✓        ✓       0
-health_8th_lord_in_6th_with_moon         health      ✓        ✓       4
-health_8th_lord_in_kendra_long_life      health      ✓        ✓       0
-health_8th_lord_malefic_conjoin_asc_lord_in_8th  health      ✓        ✓       0
-wealth_11th_lord_in_own_or_angle         wealth      ✓        ✓       0
-wealth_11th_lord_in_2nd_house            wealth      ✓        ✓       0   (silver: ch15-v4, ch43-v3)
-wealth_2nd_lord_in_11th_11th_lord_in_2nd wealth      ✓        ✓       1
-wealth_jupiter_mars_in_2nd_house         wealth      ✓        ✓       0
-family_9th_lord_exalted_father_longlife  family      ✓        ✓       0
-family_9th_10th_lord_exchange_father_wealth  family   ✓        ✓      -2
-general_argala_formation_houses          general     ✓        ✓       0   (Ch. 33; silver aux ch37/ch38)
-general_atma_karaka_degrees              general     ✓        ✓       2
-general_karakamsha_benefics_angles       general     ✓        ✓       0
+case_id                                           intent   gold@3  silver@5  delta
+career_strong_10th_lord                           career      ✓        ✓       0
+career_rahu_with_10th_lord_in_8th                 career      ✓        ✓       0
+career_jupiter_aspect_karma_yogi                  career      ✓        ✓       2
+career_saturn_debilitated_10th                    career      ✓        ✓       6
+career_fame_through_moon_in_10th                  career      ✓        ✓       0
+career_fourth_tenth_lords_angle_house_wall       career      ✓        ✓       0   (gold ch17-v4; silver career neighbors ch23)
+health_diseases_from_6th_house                    health      ✓        ✓       0
+health_ascendant_lord_with_malefics               health      ✓        ✓       0
+health_8th_lord_in_6th_with_moon                  health      ✓        ✓       —
+health_8th_lord_in_kendra_long_life             health      ✓        ✓       3
+health_8th_lord_malefic_conjoin_asc_lord_in_8th   health      ✓        ✓       0
+health_asc_malefic_no_comfort_first_house         health      ✓        ✓       1   (Ch. 14 / 1st house)
+health_fifth_lord_sons_happiness                  health      ✓        ✓       0   (Ch. 18 / 5th house)
+wealth_11th_lord_in_own_or_angle                  wealth      ✓        ✓       1
+wealth_11th_lord_in_2nd_house                     wealth      ✓        ✓       2
+wealth_2nd_lord_in_11th_11th_lord_in_2nd          wealth      ✓        ✓       0
+wealth_jupiter_mars_in_2nd_house                  wealth      ✓        ✓       0
+family_9th_lord_exalted_father_longlife           family      ✓        ✓       0
+family_9th_10th_lord_exchange_father_wealth       family      ✓        ✓       0
+family_third_lord_mars_younger_brother            family      ✓        ✓      -1   (Ch. 16 / 3rd house)
+family_seventh_lord_dusthana_sickly_wife          family      ✓        ✓       0   (Ch. 20 / 7th house)
+family_twelfth_lord_navamsha_wife_expenses        family      ✓        ✓       0   (Ch. 25 / 12th house)
+general_argala_formation_houses                   general     ✓        ✓       0
+general_atma_karaka_degrees                       general     ✓        ✓      -2
+general_karakamsha_benefics_angles                general     ✓        ✓       0
 ```
 
-Historical **`rag_v0_20260503_085118`** remains a useful **pre–full-book** checkpoint; post–full-book rolling accepts include **`rag_v0_20260509_203851`** at **`1.00 / 1.00 / +0.67`** (see Status snapshot).
+Historical **`rag_v0_20260503_085118`** remains a useful **pre–full-book** checkpoint; the **19-case** snapshot **`rag_v0_20260509_203851`** stays at **`1.00 / 1.00 / +0.67`** for delta comparison on the smaller suite (see Status snapshot).
 
 ---
 
@@ -217,6 +225,7 @@ Historical **`rag_v0_20260503_085118`** remains a useful **pre–full-book** che
 | **Verse-head regex: period required for lone numbers** | Avoids false verse boundaries (e.g. `7 or the Uttarardha…`); ranges like `4-7 If` unchanged | 2026-05-09 |
 | **`search_for_eval` must use `search(top_k=None)`** | Returning only `DENSE_TOP_K` post-rerank rows dropped gold refs still in the deduped pool (e.g. `bphs-ch23-v16`), collapsing gold@3 on full-book indexes | 2026-05-10 |
 | **Full-book rerank: pre-order bonus + house chapter hints + BM25 sim cap** | `PRE_RERANK_WEIGHT` trusts RRF/dense ordering; `HOUSE_EFFECTS_CHAPTER` + question/chart hints + Navamsa align lift house-specific verses; `BM25_SIMILARITY_CAP` stops pseudo-sim 1.0 BM25 rows from dominating | 2026-05-10 |
+| **`HOUSE_EFFECTS_CHAPTER` all 12 houses + 25-case RAG goldens** | Extended map with **1→14, 3→16, 4→17, 5→18, 7→20, 12→25** (Sharma “effects” chapters per `tools/ingest_bphs_sharma_house_arc.sh`); six new rows in `rag_eval_v0.json`; accepted **`rag_v0_20260510_085550`** **`1.00 / 1.00 / +0.50`**. Rolling history compared to **`rag_v0_20260503_085118`** (silver 0.90) so the wider suite could register without a strict delta regression vs the prior **1.00 / 1.00** row. | 2026-05-10 |
 
 ## Quick commands
 

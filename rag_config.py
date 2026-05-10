@@ -57,12 +57,18 @@ SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
 # Used at rerank to prefer the house-specific chapter when the question or chart
 # references that house (reduces cross-chapter competition after full-book ingest).
 HOUSE_EFFECTS_CHAPTER = {
+    1: 14,
     2: 15,
+    3: 16,
+    4: 17,
+    5: 18,
     6: 19,
+    7: 20,
     8: 21,
     9: 22,
     10: 23,
     11: 24,
+    12: 25,
 }
 CHAPTER_HINT_WEIGHT = 0.14
 # BM25-only rows use score/max(score) as a pseudo-similarity; without a cap it

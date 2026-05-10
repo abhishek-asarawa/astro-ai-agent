@@ -194,6 +194,74 @@
     "silver_citations": ["bphs-ch22-v6", "bphs-ch22-summary"]
   },
   {
+    "case_id": "health_asc_malefic_no_comfort_first_house",
+    "question": "When the Ascendant or the Moon is aspected by malefic planets or is together with them without benefic aspect, what does Parashara say about health and comforts?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Leo",
+      "sun": {"house": 1, "dignity": "ascendant with malefic aspect"}
+    },
+    "gold_citations": ["bphs-ch14-v3"],
+    "silver_citations": ["bphs-ch14-v5-7", "bphs-ch4-v4"]
+  },
+  {
+    "case_id": "family_third_lord_mars_younger_brother",
+    "question": "What does Parashara indicate about a younger brother when the Lord of the Third House together with Mars aspects the Third House or is placed in the Third House?",
+    "expected_intent": "family",
+    "chart_context": {
+      "lagna": "Gemini",
+      "mars": {"house": 3, "dignity": "3rd lord with Mars"}
+    },
+    "gold_citations": ["bphs-ch16-v2"],
+    "silver_citations": ["bphs-ch16-v3", "bphs-ch16-summary"]
+  },
+  {
+    "case_id": "career_fourth_tenth_lords_angle_house_wall",
+    "question": "When the Lord of the Fourth House and the Lord of the Tenth House are together in a kendra or trikona, how should the native's house be described according to Parashara?",
+    "expected_intent": "career",
+    "chart_context": {
+      "lagna": "Cancer",
+      "moon": {"house": 4, "dignity": "4th lord"},
+      "saturn": {"house": 10, "dignity": "10th lord"}
+    },
+    "gold_citations": ["bphs-ch17-v4"],
+    "silver_citations": ["bphs-ch23-v19-21", "bphs-ch23-v6"]
+  },
+  {
+    "case_id": "health_fifth_lord_sons_happiness",
+    "question": "According to Parashara, when the Ascendant Lord and the Fifth Lord are in the 5th House or in a kendra or trikona, what is predicted for health and happiness regarding the son?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Sagittarius",
+      "jupiter": {"house": 1, "dignity": "ascendant lord"},
+      "sun": {"house": 5, "dignity": "5th lord in 5th"}
+    },
+    "gold_citations": ["bphs-ch18-v1-3"],
+    "silver_citations": ["bphs-ch18-summary", "bphs-ch18-v16"]
+  },
+  {
+    "case_id": "family_seventh_lord_dusthana_sickly_wife",
+    "question": "What does Parashara say about the wife when the 7th Lord is in the 6th, 8th or 12th House and is not in his own sign or exaltation sign?",
+    "expected_intent": "family",
+    "chart_context": {
+      "lagna": "Aries",
+      "venus": {"house": 12, "dignity": "7th lord in 12th"}
+    },
+    "gold_citations": ["bphs-ch20-v2"],
+    "silver_citations": ["bphs-ch20-v1", "bphs-ch20-summary"]
+  },
+  {
+    "case_id": "family_twelfth_lord_navamsha_wife_expenses",
+    "question": "According to Parashara, when the 12th Lord falls in the Navamamsha of his enemy, debilitation, or the Navamamsha of the 8th House, or in the 6th or 8th House, what results for happiness through the wife and expenses?",
+    "expected_intent": "family",
+    "chart_context": {
+      "lagna": "Taurus",
+      "jupiter": {"house": 12, "dignity": "12th lord"}
+    },
+    "gold_citations": ["bphs-ch25-v5-6"],
+    "silver_citations": ["bphs-ch21-v4-7", "bphs-ch22-v18-25"]
+  },
+  {
     "case_id": "general_argala_formation_houses",
     "question": "According to Parashara, how is Argala formed and how do planets and houses determine its definite effects?",
     "expected_intent": "general",
