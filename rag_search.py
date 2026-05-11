@@ -15,6 +15,7 @@ top-k most relevant chunks from the local Chroma index. Strategy:
 """
 
 import re
+from functools import lru_cache
 from dataclasses import dataclass, field
 
 import chromadb
@@ -222,6 +223,18 @@ def expand_queries(question, intent, chart_facts):
             f"{base} Labha Bhava eleventh house gains lord own exaltation angle trine"
         )
 
+    # HyDE-lite (Phase 3a): optionally add a BPHS-style hypothetical rewrite query
+    # for better dense retrieval when user wording mismatches corpus phrasing.
+    if cfg.QUERY_REWRITE_ENABLED and base:
+        rewritten = _hyde_rewrite_query(
+            question=base,
+            intent=intent,
+            structural=structural,
+            intent_words=intent_words,
+        )
+        if rewritten:
+            queries.append(rewritten)
+
     seen = set()
     deduped = []
     for q in queries:
@@ -229,6 +242,71 @@ def expand_queries(question, intent, chart_facts):
             seen.add(q)
             deduped.append(q)
     return deduped
+
+
+_REF_TAG_ANY_RE = re.compile(r"\[ref:[^\]]+\]")
+
+
+@lru_cache(maxsize=64)
+def _hyde_rewrite_query(question: str, intent: str, structural: str, intent_words: str) -> str:
+    """Return a short BPHS/Sharma-style hypothetical rewrite for retrieval.
+
+    This is intentionally an embedding-friendly *query* string (not a full answer).
+    """
+    if not question:
+        return ""
+
+    # Local import avoids circular dependency at module import time:
+    # `astro_engine.py` imports this module.
+    from astro_engine import query_ollama_once
+
+    structural_norm = " ".join((structural or "").split())
+    intent_words_norm = " ".join((intent_words or "").split())
+
+    # Constrain output to reduce semantic drift that can hurt rerank recall.
+    prompt = (
+        "You generate a short embedding query for a BPHS/Sharma astrology retrieval system.\n"
+        "Output ONLY ONE line. No JSON, no markdown, no [ref:...] markers, no explanations.\n\n"
+        "Chart structural tokens (COPY VERBATIM at the start):\n"
+        f"{structural_norm}\n\n"
+        f"Intent keyword phrase (include verbatim): {intent_words_norm}\n\n"
+        "User question:\n"
+        f"{question}\n\n"
+        "After the copied chart tokens + intent phrase, add ONLY a minimal BPHS-style outcome keyword phrase.\n"
+        "Hard rules: no metaphors/similes/storytelling; keep it mostly to astrology tokens."
+    )
+
+    raw = query_ollama_once(
+        prompt,
+        temperature=cfg.QUERY_REWRITE_TEMPERATURE,
+        timeout_s=cfg.QUERY_REWRITE_TIMEOUT_S,
+        model_name=cfg.QUERY_REWRITE_MODEL,
+        num_ctx=cfg.QUERY_REWRITE_NUM_CTX,
+    )
+
+    out = (raw or "").replace("\n", " ").strip()
+    out = _REF_TAG_ANY_RE.sub("", out).strip()
+    out = out.strip("\"'“”‘’").strip()
+    out = re.sub(r"\s+", " ", out).strip()
+
+    if not out:
+        return ""
+
+    # Post-process to keep only tokens that appear in chart structure or intent phrase.
+    # This avoids the model injecting extra narrative language that can crowd out gold refs.
+    allowed = set(re.findall(r"[A-Za-z0-9]+", f"{structural_norm} {intent_words_norm}".lower()))
+    out_tokens = [t for t in re.findall(r"[A-Za-z0-9]+", out.lower()) if t in allowed]
+    if len(out_tokens) >= 4:
+        out = " ".join(out_tokens)
+
+    # Ensure chart + intent anchors are present (best-effort).
+    if structural_norm and structural_norm.lower() not in out.lower():
+        out = f"{structural_norm} {out}".strip()
+    if intent_words_norm and intent_words_norm.lower() not in out.lower():
+        out = f"{out} {intent_words_norm}".strip()
+
+    out = re.sub(r"\s+", " ", out).strip()
+    return out[: cfg.QUERY_REWRITE_MAX_CHARS].strip()
 
 
 def _parse_entities_field(entities_field):

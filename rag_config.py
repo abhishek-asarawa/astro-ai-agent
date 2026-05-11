@@ -77,6 +77,16 @@ BM25_SIMILARITY_CAP = 0.88
 # Question mentions Navamsa/Navamsha and chunk text aligns (exact gold for some Ch.23 cases).
 NAVAMSA_ALIGN_WEIGHT = 0.16
 
+# HyDE-lite (Phase 3a) optional query rewrite for retrieval.
+# Default is off to avoid extra LLM calls and any production behavior change.
+QUERY_REWRITE_ENABLED = False
+QUERY_REWRITE_MODEL = "llama3.2:3b"
+QUERY_REWRITE_TIMEOUT_S = 45
+QUERY_REWRITE_TEMPERATURE = 0.0
+QUERY_REWRITE_NUM_CTX = 4096
+# Keep the rewritten query short so it stays an embedding-friendly "query".
+QUERY_REWRITE_MAX_CHARS = 220
+
 
 def estimate_tokens(text):
     """Cheap token estimate without tiktoken: ~4 chars per token."""

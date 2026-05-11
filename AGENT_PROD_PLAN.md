@@ -103,7 +103,18 @@ Update status here as tasks complete. Format: `[ ]` pending → `[x]` done → `
 
 ### Phase 3 — RAG quality
 
-- [ ] **p3a** HyDE-lite query rewrite: in `rag_search.py` `expand_queries()`, optionally call `llama3.2:3b` to rewrite the question as a BPHS-style hypothetical verse; gate behind `cfg.QUERY_REWRITE_ENABLED = False`
+- [x] **p3a** HyDE-lite query rewrite: in `rag_search.py` `expand_queries()`, optionally add an `llama3.2:3b` rewrite query gated by `cfg.QUERY_REWRITE_ENABLED` (default `False` in `rag_config.py`); constrained post-processing keeps retrieval stable. **Verification record below.**
+
+**Phase 3a verification (2026-05-12):** Golden set `data/golden/rag_eval_v0.json` (25 cases), `python3 evaluate_rag.py --db-path chroma_db --no-retention` (no `--judge-model`; production-style `intent_router.detect_intent`). `intent_num_ctx=16384`, `intent_routing_agreement=0.92` on all runs below.
+
+| Run | HyDE (`QUERY_REWRITE_ENABLED`) | `rag_recall_at_3_gold` | `rag_recall_at_5_silver` | `rag_heuristic_delta` | `outcomes_checksum` (first 16 hex) |
+|-----|--------------------------------|------------------------|---------------------------|-------------------------|--------------------------------------|
+| Baseline | `False` (default) | 0.96 | 0.92 | 0.522 | `8f7073ff4189de95…` |
+| HyDE v1 (looser prompt) | `True` (runtime) | 0.88 | 0.80 | 0.261 | `629b35cc587ed916…` (regressed; prompt tightened) |
+| HyDE v2 (constrained rewrite) | `True` (runtime) | 0.96 | 0.88 | 0.522 | `74ef2f7fb2870be7…` |
+
+**Takeaway:** v2 preserves gold@3 and heuristic delta vs baseline; silver@5 is slightly lower (0.92 → 0.88). HyDE remains **opt-in** until product wants the tradeoff (extra `llama3.2:3b` call per retrieval). Local report JSONs: `rag_eval_report_phase3a_off_v2.json`, `rag_eval_report_phase3a_on.json`, `rag_eval_report_phase3a_on_v2.json` (gitignored / not committed).
+
 - [ ] **p3b** Cross-encoder reranker: replace heuristic `_rerank()` (`rag_search.py` lines 531-588) with `bge-reranker-v2-m3` or `ms-marco-MiniLM-L-6-v2` (~400MB, CPU-only) via `sentence-transformers`; keep heuristic as fallback. **Prerequisite: p1a must be done first to free VRAM.**
 - [ ] **p3c** Antardasha entity in RAG: after p4a, pass the active Antardasha planet into `_query_entities()` (`rag_search.py` line 257) so retrieval biases toward sub-lord house effects
 
