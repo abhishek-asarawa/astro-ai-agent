@@ -233,6 +233,7 @@ def _build_domain_prompt(
     opportunity_label,
     signal_header,
     signal_house_map,
+    prior_context=None,
 ):
     return (
         f"You are an expert Vedic astrologer focused on {domain_name} prediction.\n"
@@ -256,6 +257,7 @@ def _build_domain_prompt(
         + _render_dasha_section(features)
         + "\n\n"
         + format_dasha_timeline(features["dasha_timeline"])
+        + (f"\n\nPriorContext:\n{prior_context}" if prior_context else "")
         + f"\n\nQuestion: {user_question}"
     )
 
@@ -383,9 +385,11 @@ def _strip_unknown_refs(text, allowed_refs):
     return cleaned, dropped
 
 
-def build_rag_enriched_prompt(features, user_question, intent):
+def build_rag_enriched_prompt(features, user_question, intent, prior_context=None):
     resolved_intent = (intent or "general").strip().lower() or "general"
-    base_prompt = build_prompt_for_intent(features, user_question, resolved_intent)
+    base_prompt = build_prompt_for_intent(
+        features, user_question, resolved_intent, prior_context=prior_context
+    )
     chart_facts = _features_to_chart_facts(features)
 
     try:
@@ -444,7 +448,7 @@ def build_rag_enriched_prompt(features, user_question, intent):
     }
 
 
-def build_career_prompt(features, user_question):
+def build_career_prompt(features, user_question, prior_context=None):
     """Assemble deterministic, career-focused prompt sections."""
     return _build_domain_prompt(
         features=features,
@@ -460,10 +464,11 @@ def build_career_prompt(features, user_question):
             ("2nd house lord", 2),
             ("11th house lord", 11),
         ],
+        prior_context=prior_context,
     )
 
 
-def build_health_prompt(features, user_question):
+def build_health_prompt(features, user_question, prior_context=None):
     return _build_domain_prompt(
         features=features,
         user_question=user_question,
@@ -478,10 +483,11 @@ def build_health_prompt(features, user_question):
             ("8th house lord", 8),
             ("12th house lord", 12),
         ],
+        prior_context=prior_context,
     )
 
 
-def build_wealth_prompt(features, user_question):
+def build_wealth_prompt(features, user_question, prior_context=None):
     return _build_domain_prompt(
         features=features,
         user_question=user_question,
@@ -496,10 +502,11 @@ def build_wealth_prompt(features, user_question):
             ("5th house lord", 5),
             ("9th house lord", 9),
         ],
+        prior_context=prior_context,
     )
 
 
-def build_family_prompt(features, user_question):
+def build_family_prompt(features, user_question, prior_context=None):
     return _build_domain_prompt(
         features=features,
         user_question=user_question,
@@ -514,10 +521,11 @@ def build_family_prompt(features, user_question):
             ("2nd house lord", 2),
             ("5th house lord", 5),
         ],
+        prior_context=prior_context,
     )
 
 
-def build_general_prompt(features, user_question):
+def build_general_prompt(features, user_question, prior_context=None):
     return _build_domain_prompt(
         features=features,
         user_question=user_question,
@@ -532,10 +540,11 @@ def build_general_prompt(features, user_question):
             ("7th house lord", 7),
             ("10th house lord", 10),
         ],
+        prior_context=prior_context,
     )
 
 
-def build_prompt_for_intent(features, user_question, intent):
+def build_prompt_for_intent(features, user_question, intent, prior_context=None):
     intent_map = {
         "career": build_career_prompt,
         "health": build_health_prompt,
@@ -544,7 +553,7 @@ def build_prompt_for_intent(features, user_question, intent):
         "general": build_general_prompt,
     }
     builder = intent_map.get((intent or "").strip().lower(), build_general_prompt)
-    return builder(features, user_question)
+    return builder(features, user_question, prior_context=prior_context)
 
 
 def _call_ollama(prompt, stream=False, temperature=0.2, timeout_s=120, model_name=None, num_ctx=None):

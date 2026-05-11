@@ -86,8 +86,20 @@ Update status here as tasks complete. Format: `[ ]` pending → `[x]` done → `
 
 ### Phase 2 — Agentic loop
 
-- [ ] **p2a** Create `agent_loop.py`: `TOOLS` dict (`build_chart`, `rag_search`, `get_dasha`, `detect_intent`); use Ollama native `tools` format (supported since Ollama 0.3); ReAct loop with 2-turn fallback to current linear path
-- [ ] **p2b** Multi-turn memory: add `ConversationBuffer` (rolling last N=3 turns, ~300 token cap) in `app.py`; inject as `PriorContext:` block before `Question:` in `_build_domain_prompt`; summarise overflow with a one-shot `llama3.2:3b` call
+- [x] **p2a** Create `agent_loop.py`: `TOOLS` dict (`build_chart`, `rag_search`, `get_dasha`, `detect_intent`); use Ollama native `tools` format (supported since Ollama 0.3); ReAct loop with 2-turn fallback to current linear path
+- [x] **p2b** Multi-turn memory: add `ConversationBuffer` (rolling last N=3 turns, ~300 token cap) in `app.py`; inject as `PriorContext:` block before `Question:` in `_build_domain_prompt`; summarise overflow with a one-shot `llama3.2:3b` call
+
+**Phase 2 implementation notes (2026-05-10):** New files: `agent_loop.py` (ReAct loop, MAX_AGENT_TURNS=2, /api/chat tools endpoint, 4 tools, linear fallback via `query_ollama_once`), `conversation.py` (`ConversationBuffer` class + `make_summarize_fn` factory). Modified: `astro_engine.py` — `prior_context` param threaded through `_build_domain_prompt` → all 5 domain builders → `build_prompt_for_intent` → `build_rag_enriched_prompt`. Modified: `app.py` — `ConversationBuffer` initialised in session state; `prior_context` extracted before each query; agent-loop path added (non-streaming, behind "Enable Agent Loop" checkbox); buffer updated after each completed turn. RAG path and linear path both inject `PriorContext:` block when history is present.
+
+### Phase 2 — Streamlit UI (follow-ups & layout) — done
+
+- [x] **p2ui-a** Follow-up questions: removed the `return` that ran when `pending_request` was empty (which hid the whole page on the next rerun). Conversation, structured reading, and chart expanders render on every load; birth defaults persist in `saved_birth` after each successful run so the user can change only the question and resubmit.
+- [x] **p2ui-b** Agent settings moved to the **sidebar** (RAG, agent loop, model override, timeout) with a **Reset conversation** control; main area keeps birth details + question form only.
+- [x] **p2ui-c** Structured reading: new `response_sections.py` (`parse_structured_answer`) drives tabs (**Summary**, **Evidence**, **Risk & opportunity**, **Confidence**) plus **Raw model output** expander; chat assistant bubbles show a pointer to structured content (older turns show a snippet expander instead of the full wall of text).
+- [x] **p2ui-d** Customer-friendly copy: strip `[ref:…]` tags for default UI (`text_utils.format_consumer_text`); relabel tabs (Overview, Key points, Cautions & upside); confidence as plain-language + progress bar; raw output only when sidebar **Show technical details** is on; optional “How this answer was grounded” expander without exposing verse IDs.
+- [x] **p2ui-e** Chat UX: use `st.chat_input` for follow-ups so the UI feels like real chat (user bubble appears immediately).
+
+**Phase 2 UI notes (2026-05-11):** Linear generation still streams into a transient placeholder; successful runs append `assistant` to `chat_history` only on success (no orphan messages on Ollama errors). `last_features` / `last_retrieved_rows` / `last_prompt_preview` stay in session for Sources and prompt preview between turns. **p2ui-d (2026-05-11):** Default view hides `[ref:…]` ids and raw template noise; practitioner/raw view is opt-in via sidebar. **p2ui-e (2026-05-12):** `st.chat_input` follow-ups with immediate user message bubble.
 
 ### Phase 3 — RAG quality
 
@@ -158,7 +170,7 @@ gantt
 | Phase | Files touched |
 |---|---|
 | 1 | `astro_engine.py`, `intent_router.py`, `app.py`, new `text_utils.py` |
-| 2 | new `agent_loop.py`, `app.py`, `astro_engine.py` |
+| 2 | new `agent_loop.py`, `conversation.py`, `response_sections.py`, `app.py`, `astro_engine.py` |
 | 3 | `rag_search.py`, `rag_config.py`, `requirements.txt` |
 | 4 | `dashas.py`, `utils.py`, `astro_engine.py` |
 | 5 | new `chart_engine.py`, `prompts/builder.py`, `rag_inject.py`, `llm_client.py`, `tracer.py`, `scripts/trace_summary.py`, `requirements.txt` |
