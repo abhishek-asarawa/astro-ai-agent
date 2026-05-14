@@ -425,17 +425,30 @@ def main():
 
                 st.divider()
                 st.subheader("Run summary")
-                info1, info2, info3, info4 = st.columns(4)
-                info1.metric("Model", resolved_model)
-                info2.metric(
+                r1c1, r1c2, r1c3 = st.columns(3)
+                r1c1.metric("Model", resolved_model)
+                r1c2.metric(
                     "Active Mahadasha",
                     features["active_dasha"]["dasha"] if features["active_dasha"] else "Unknown",
                 )
-                info3.metric(
+                r1c3.metric(
+                    "Active Antardasha",
+                    features["active_antardasha"]["dasha"]
+                    if features.get("active_antardasha")
+                    else "Unknown",
+                )
+                r2c1, r2c2, r2c3 = st.columns(3)
+                r2c1.metric(
                     "Next Mahadasha",
                     features["next_dasha"]["dasha"] if features["next_dasha"] else "Unknown",
                 )
-                info4.metric("Detected intent", intent_info.get("intent", "general"))
+                r2c2.metric(
+                    "Next Antardasha",
+                    features["next_antardasha"]["dasha"]
+                    if features.get("next_antardasha")
+                    else "Unknown",
+                )
+                r2c3.metric("Detected intent", intent_info.get("intent", "general"))
 
                 rag_caption = f"RAG: {'ON' if rag_enabled else 'OFF'}"
                 if rag_enabled and rag_bundle:
@@ -510,8 +523,10 @@ def main():
                             st.write(chunk_text or "_No chunk text._")
 
         with st.expander("Dasha snapshot", expanded=False):
-            st.write(f"Active: {_format_dasha(features.get('active_dasha'))}")
-            st.write(f"Next: {_format_dasha(features.get('next_dasha'))}")
+            st.write(f"Active Mahadasha: {_format_dasha(features.get('active_dasha'))}")
+            st.write(f"Active Antardasha: {_format_dasha(features.get('active_antardasha'))}")
+            st.write(f"Next Mahadasha: {_format_dasha(features.get('next_dasha'))}")
+            st.write(f"Next Antardasha: {_format_dasha(features.get('next_antardasha'))}")
 
         with st.expander("Planetary placements", expanded=False):
             st.json(features.get("planets", {}))

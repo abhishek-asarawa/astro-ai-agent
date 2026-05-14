@@ -115,12 +115,41 @@ Update status here as tasks complete. Format: `[ ]` pending → `[x]` done → `
 
 **Takeaway:** v2 preserves gold@3 and heuristic delta vs baseline; silver@5 is slightly lower (0.92 → 0.88). HyDE remains **opt-in** until product wants the tradeoff (extra `llama3.2:3b` call per retrieval). Local report JSONs: `rag_eval_report_phase3a_off_v2.json`, `rag_eval_report_phase3a_on.json`, `rag_eval_report_phase3a_on_v2.json` (gitignored / not committed).
 
-- [ ] **p3b** Cross-encoder reranker: replace heuristic `_rerank()` (`rag_search.py` lines 531-588) with `bge-reranker-v2-m3` or `ms-marco-MiniLM-L-6-v2` (~400MB, CPU-only) via `sentence-transformers`; keep heuristic as fallback. **Prerequisite: p1a must be done first to free VRAM.**
-- [ ] **p3c** Antardasha entity in RAG: after p4a, pass the active Antardasha planet into `_query_entities()` (`rag_search.py` line 257) so retrieval biases toward sub-lord house effects
+- [x] **p3b** Cross-encoder reranker: optional `sentence_transformers.CrossEncoder` (`cross-encoder/ms-marco-MiniLM-L-6-v2` by default, `BAAI/bge-reranker-v2-m3` via env) in `rag_search.py`; scores are **blended** with min-max normalized heuristic scores (`CROSS_ENCODER_HEURISTIC_BLEND`, default `0.15`) because pure CE regressed gold@3 on the golden set; heuristic-only if CE is disabled, load fails, or question is empty. Config: `rag_config.py` (`CROSS_ENCODER_*`, env `ASTRO_CROSS_ENCODER_*`). CLI: `evaluate_rag.py --cross-encoder`. **Verification record below.**
+
+**Phase 3b verification (2026-05-12):** Golden set `data/golden/rag_eval_v0.json` (25 cases), `python3 evaluate_rag.py --db-path chroma_db --no-retention`, `intent_num_ctx=16384`, `intent_routing_agreement=0.92`.
+
+| Run | Cross-encoder | Blend (CE weight) | `rag_recall_at_3_gold` | `rag_recall_at_5_silver` | `rag_heuristic_delta` | `outcomes_checksum` (first 16 hex) |
+|-----|---------------|-------------------|------------------------|---------------------------|-------------------------|--------------------------------------|
+| Baseline | off | — | 0.96 | 0.92 | 0.522 | `8f7073ff4189de95…` |
+| CE pure | on (`--cross-encoder`), blend 1.0 | 1.0 | 0.92 | 0.56 | 0.043 | `9be10d58e94a85f1…` (regressed) |
+| CE + heuristic (default) | on, default blend 0.15 | 0.15 | 0.96 | 0.92 | 0.609 | `c46d997809df3663…` |
+
+**Takeaway:** Cross-encoder stays **opt-in** (`CROSS_ENCODER_RERANK_ENABLED` / `--cross-encoder`); default blend preserves gold/silver parity vs baseline and improves mean heuristic delta; tune `ASTRO_CROSS_ENCODER_HEURISTIC_BLEND` if you switch reranker model.
+- [ ] **p3c** Antardasha entity in RAG: after p4a, pass the active Antardasha planet into `_query_entities()` (`rag_search.py`, near `_query_entities`) so retrieval biases toward sub-lord house effects
 
 ### Phase 4 — Chart compute completeness
 
-- [ ] **p4a** Antardasha: add `calculate_antardashas(mahadasha_lord, maha_start, maha_end)` to `dashas.py` using standard Vimshottari proportional sub-period formula; surface as `ActiveAntardasha:` in `_render_dasha_section()` (`astro_engine.py` lines 207-213) and in the Streamlit "Dasha Snapshot" expander
+- [x] **p4a** Antardasha: add `calculate_antardashas(mahadasha_lord, maha_start, maha_end)` to `dashas.py` using standard Vimshottari proportional sub-period formula; surface as `ActiveAntardasha:` in `_render_dasha_section()` (`astro_engine.py` lines 207-213) and in the Streamlit "Dasha Snapshot" expander
+
+**Phase 4a verification (2026-05-14)**
+
+**Automated:** `python3 -m pytest tests/test_dashas_antar.py -q` → **12 passed** (9 parametrized order/count cases + 3 named tests).
+
+| Test | What it asserts |
+|------|-----------------|
+| `test_antardasha_order_and_count` (×9 MD lords) | First antar = MD lord; sequence follows `DASHA_SEQUENCE`; exactly 9 segments |
+| `test_antardasha_contiguity_mass_balance_and_nesting` | `start` ≤ `end`; each segment inside MD bounds; consecutive starts within 1 day of prior end; sum of antar days ≈ MD span (≤ 2 day tolerance) |
+| `test_get_current_and_next_antardasha_finds_window` | Active segment contains query date; next segment starts after active end |
+| `test_invalid_inputs_return_empty` | Unknown lord or inverted dates → `[]` |
+
+**Smoke (integration, one chart):** `build_chart_features(1990, 5, 15, 10, 30, "bengaluru")` on 2026-05-14 — active Mahadasha Rahu `2011-12-08`–`2029-12-07`; active Antardasha Venus `2023-06-24`–`2026-06-23` (nested in MD); `len(antardasha_timeline_current_md) == 9`; `date.today()` inside active antar window.
+
+**Manual (not automated in CI):** Streamlit “Dasha snapshot” and run-summary metrics show MD + antar labels; agent `get_dasha` tool returns the same four lines as `features` (see `agent_loop._tool_get_dasha`); domain prompts include `- Active Antardasha:` / `- Next Antardasha:` via `_render_dasha_section`.
+
+**Omitted:** `evaluate_rag.py` — no `rag_search.py` change in p4a; rerun after **p3c** when antar is fed into `_query_entities`.
+
+**Artifacts:** `dashas.py` (`calculate_antardashas`, `get_current_and_next_antardasha`), `astro_engine.py`, `app.py`, `agent_loop.py`, `tests/test_dashas_antar.py`, `requirements.txt` (`pytest`).
 - [ ] **p4b** City coverage: add `geopy`-based geocoder fallback in `utils.py` (Nominatim, LRU cache via `functools.lru_cache`); raise explicit error instead of silently defaulting to Bengaluru
 - [ ] **p4c** (nice-to-have) Bhava chalit: store cusp-based `bhava_positions` (planet → actual house) in `build_chart_features()` return value; cusps are already computed at `astro_engine.py` line 58 but unused
 
@@ -182,8 +211,8 @@ gantt
 |---|---|
 | 1 | `astro_engine.py`, `intent_router.py`, `app.py`, new `text_utils.py` |
 | 2 | new `agent_loop.py`, `conversation.py`, `response_sections.py`, `app.py`, `astro_engine.py` |
-| 3 | `rag_search.py`, `rag_config.py`, `requirements.txt` |
-| 4 | `dashas.py`, `utils.py`, `astro_engine.py` |
+| 3 | `rag_search.py`, `rag_config.py`, `requirements.txt`, `evaluate_rag.py` |
+| 4 | `dashas.py`, `utils.py`, `astro_engine.py`, `app.py`, `agent_loop.py`, `tests/test_dashas_antar.py` |
 | 5 | new `chart_engine.py`, `prompts/builder.py`, `rag_inject.py`, `llm_client.py`, `tracer.py`, `scripts/trace_summary.py`, `requirements.txt` |
 | 6 | `data/golden/rag_eval_v0.json`, `evaluate_career.py`, new `evaluate_template.py` |
 

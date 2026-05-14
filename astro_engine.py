@@ -9,7 +9,12 @@ from mapper import get_vedic_details
 from utils import CITY_COORDINATES, convert_ist_to_utc
 from lords import RASHIS, get_house_lords
 from yogas import apply_tags_to_chart
-from dashas import calculate_dashas, format_dasha_timeline
+from dashas import (
+    calculate_antardashas,
+    calculate_dashas,
+    format_dasha_timeline,
+    get_current_and_next_antardasha,
+)
 import rag_config as cfg
 import rag_search
 
@@ -139,6 +144,19 @@ def build_chart_features(year, month, day, hour, minute, city_name="bengaluru"):
     timeline = calculate_dashas(moon_longitude, year, month, day)
     current_dasha, next_dasha = _get_current_and_next_dasha(timeline, date.today())
 
+    active_antardasha = None
+    next_antardasha = None
+    antardasha_timeline_current_md = []
+    if current_dasha:
+        m_start = datetime.strptime(current_dasha["start"], "%Y-%m-%d").date()
+        m_end = datetime.strptime(current_dasha["end"], "%Y-%m-%d").date()
+        antardasha_timeline_current_md = calculate_antardashas(
+            current_dasha["dasha"], m_start, m_end
+        )
+        active_antardasha, next_antardasha = get_current_and_next_antardasha(
+            antardasha_timeline_current_md, date.today()
+        )
+
     return {
         "birth_input_ist": {
             "year": year,
@@ -156,6 +174,9 @@ def build_chart_features(year, month, day, hour, minute, city_name="bengaluru"):
         "dasha_timeline": timeline,
         "active_dasha": current_dasha,
         "next_dasha": next_dasha,
+        "active_antardasha": active_antardasha,
+        "next_antardasha": next_antardasha,
+        "antardasha_timeline_current_md": antardasha_timeline_current_md,
         "coordinates": core["coordinates"],
     }
 
@@ -210,9 +231,13 @@ def _render_functional_lords(features):
 def _render_dasha_section(features):
     active_dasha = features["active_dasha"] or {}
     next_dasha = features["next_dasha"] or {}
+    active_ant = features.get("active_antardasha") or {}
+    next_ant = features.get("next_antardasha") or {}
     lines = [
         f"- Active Mahadasha: {active_dasha.get('dasha', 'Unknown')} ({active_dasha.get('start', '?')} to {active_dasha.get('end', '?')})",
+        f"- Active Antardasha: {active_ant.get('dasha', 'Unknown')} ({active_ant.get('start', '?')} to {active_ant.get('end', '?')})",
         f"- Next Mahadasha: {next_dasha.get('dasha', 'Unknown')} ({next_dasha.get('start', '?')} to {next_dasha.get('end', '?')})",
+        f"- Next Antardasha: {next_ant.get('dasha', 'Unknown')} ({next_ant.get('start', '?')} to {next_ant.get('end', '?')})",
     ]
     return "\n".join(lines)
 

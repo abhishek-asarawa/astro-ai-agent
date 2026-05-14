@@ -78,8 +78,8 @@ TOOLS: list[dict] = [
         "function": {
             "name": "get_dasha",
             "description": (
-                "Return the active Mahadasha, next Mahadasha, and full Vimshottari "
-                "dasha timeline for the native."
+                "Return the active Mahadasha, active Antardasha, next Mahadasha, next Antardasha, "
+                "and full Vimshottari Mahadasha timeline for the native."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -156,12 +156,18 @@ def _tool_rag_search(features: dict, query: str, intent: str, top_k: int = 5) ->
 def _tool_get_dasha(features: dict) -> str:
     active = features.get("active_dasha") or {}
     nxt = features.get("next_dasha") or {}
+    active_ant = features.get("active_antardasha") or {}
+    next_ant = features.get("next_antardasha") or {}
     timeline = features.get("dasha_timeline", [])
     lines = [
         f"Active Mahadasha: {active.get('dasha', '?')} "
         f"({active.get('start', '?')} to {active.get('end', '?')})",
+        f"Active Antardasha: {active_ant.get('dasha', '?')} "
+        f"({active_ant.get('start', '?')} to {active_ant.get('end', '?')})",
         f"Next Mahadasha: {nxt.get('dasha', '?')} "
         f"({nxt.get('start', '?')} to {nxt.get('end', '?')})",
+        f"Next Antardasha: {next_ant.get('dasha', '?')} "
+        f"({next_ant.get('start', '?')} to {next_ant.get('end', '?')})",
         "",
         format_dasha_timeline(timeline),
     ]
