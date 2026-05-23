@@ -126,7 +126,9 @@ Update status here as tasks complete. Format: `[ ]` pending → `[x]` done → `
 | CE + heuristic (default) | on, default blend 0.15 | 0.15 | 0.96 | 0.92 | 0.609 | `c46d997809df3663…` |
 
 **Takeaway:** Cross-encoder stays **opt-in** (`CROSS_ENCODER_RERANK_ENABLED` / `--cross-encoder`); default blend preserves gold/silver parity vs baseline and improves mean heuristic delta; tune `ASTRO_CROSS_ENCODER_HEURISTIC_BLEND` if you switch reranker model.
-- [ ] **p3c** Antardasha entity in RAG: after p4a, pass the active Antardasha planet into `_query_entities()` (`rag_search.py`, near `_query_entities`) so retrieval biases toward sub-lord house effects
+- [x] **p3c** Antardasha entity in RAG: after p4a, pass the active Antardasha planet into `_query_entities()` (`rag_search.py`, near `_query_entities`) so retrieval biases toward sub-lord house effects
+
+**Phase 3c verification (2026-05-14):** `_features_to_chart_facts` sets `chart_facts["_antardasha_lord"]` from `active_antardasha["dasha"]`; `_summarize_chart_facts` appends `{Lord} antardasha Vimshottari` for dense/BM25 + entity rerank. Golden `python3 evaluate_rag.py --db-path chroma_db --no-retention` unchanged vs baseline: `rag_recall_at_3_gold=0.96`, `rag_recall_at_5_silver=0.92`, `rag_heuristic_delta=0.522`, `outcomes_checksum=8f7073ff4189de95…` (full hash matches prior record). Tests: `tests/test_rag_antardasha_entity.py`.
 
 ### Phase 4 — Chart compute completeness
 
@@ -150,26 +152,28 @@ Update status here as tasks complete. Format: `[ ]` pending → `[x]` done → `
 **Omitted:** `evaluate_rag.py` — no `rag_search.py` change in p4a; rerun after **p3c** when antar is fed into `_query_entities`.
 
 **Artifacts:** `dashas.py` (`calculate_antardashas`, `get_current_and_next_antardasha`), `astro_engine.py`, `app.py`, `agent_loop.py`, `tests/test_dashas_antar.py`, `requirements.txt` (`pytest`).
-- [ ] **p4b** City coverage: add `geopy`-based geocoder fallback in `utils.py` (Nominatim, LRU cache via `functools.lru_cache`); raise explicit error instead of silently defaulting to Bengaluru
-- [ ] **p4c** (nice-to-have) Bhava chalit: store cusp-based `bhava_positions` (planet → actual house) in `build_chart_features()` return value; cusps are already computed at `astro_engine.py` line 58 but unused
+- [x] **p4b** City coverage: `cities.py` with geopy Nominatim + LRU cache; `CityResolutionError` (no silent Bengaluru fallback); Streamlit free-text city input
+
+**Phase 4b verification (2026-05-17):** `python3 -m pytest tests/test_cities.py -q` → 6 passed. Static cities unchanged; unknown cities raise.
+
+- [x] **p4c** Bhava chalit: `sign_houses`, `bhava_positions`, `house_cusps` in `build_chart_features()`; `USE_BHAVA_FOR_RAG` env (`ASTRO_USE_BHAVA_FOR_RAG`)
+
+**Phase 4c verification (2026-05-17):** `python3 -m pytest tests/test_bhava_positions.py tests/test_dashas_antar.py -q` → 15 passed.
 
 ### Phase 5 — Code structure & reliability
 
-- [ ] **p5a** Split `astro_engine.py` (757 lines) into:
-  - `chart_engine.py` — ephemeris compute (`build_chart_features`, `generate_full_chart`, `generate_chart_facts`)
-  - `prompts/builder.py` — `build_*_prompt` x5 + `build_prompt_for_intent`
-  - `rag_inject.py` — `build_rag_enriched_prompt`, `append_classical_references_block`, `_render_rag_block`, `_strip_unknown_refs`
-  - `llm_client.py` — `_call_ollama`, `run_astro_query`, `query_ollama_once`, `resolve_ollama_config`
-  - `astro_engine.py` → thin re-export shim for backward compatibility
-- [ ] **p5b** Structured output: add Ollama `format=` JSON schema to `_call_ollama()` when caller passes a `response_schema`; define `DomainResponseSchema` (Pydantic) in `prompts/schema.py` with fields `summary`, `evidence` (list), `risk`, `opportunity`, `confidence` (int)
-- [ ] **p5c** Observability: create `tracer.py` — JSONL append one record per LLM call (`{timestamp, model, intent, prompt_tokens_est, latency_ms, rag_active, ref_count, hallucinated_refs, template_score}`); add `scripts/trace_summary.py`
-- [ ] **p5d** Fix `requirements.txt`: add `numpy>=1.26,<3`, `sentence-transformers>=2.7`, `geopy>=2.4`
+- [x] **p5a** Split into `chart_engine.py`, `prompts/builder.py`, `rag_inject.py`, `llm_client.py`; `astro_engine.py` re-export shim; `tests/test_import_shim.py`
+- [x] **p5b** `prompts/schema.py` (`DomainResponseSchema`); `STRUCTURED_OUTPUT_ENABLED` / `ASTRO_STRUCTURED_OUTPUT`; Ollama `format=` in `llm_client._call_ollama`; JSON path in `response_sections.py`
+- [x] **p5c** `tracer.py` + `scripts/trace_summary.py`; hooks in `llm_client.query_ollama_once` and `agent_loop._call_ollama_chat` (`ASTRO_TRACE_ENABLED`)
+- [x] **p5d** `requirements.txt`: added `geopy>=2.4,<3`, `pydantic>=2.0,<3` (numpy/ST already present)
 
 ### Phase 6 — Evaluation improvements
 
-- [ ] **p6a** Expand `evaluate_career.py` `DEFAULT_CASES`: add at least 2 cases per non-career domain (health, wealth, family); add antardasha-aware cases (Saturn MD / Moon AD career outlook)
-- [ ] **p6b** Expand `data/golden/rag_eval_v0.json` with sub-dasha-aware retrieval cases
-- [ ] **p6c** Create `evaluate_template.py`: run each domain prompt builder against fixed chart inputs; assert template adherence ≥ 0.90 per domain; `--fail-on-regression` exit code for CI
+- [x] **p6a** `evaluate_career.py`: 9 cases (2 per non-career domain + `career_saturn_md_moon_ad`); domain-aware `score_template_adherence` via `eval_template_markers.py`
+- [x] **p6b** `data/golden/rag_eval_v0.json`: +5 antardasha cases; `chart_context_to_minimal_features` passes `_antardasha_lord`
+- [x] **p6c** `evaluate_template.py` + `scripts/run_ci_checks.sh` (pytest + template `--fail-on-regression`)
+
+**Phase 6 verification (2026-05-17):** `python3 -m pytest tests/ -q` → 30 passed; `python3 evaluate_template.py --fail-on-regression` → all 5 domains ok. Golden RAG re-run requires local Ollama + `chroma_db` (`python3 evaluate_rag.py --db-path chroma_db --no-retention`).
 
 ---
 
