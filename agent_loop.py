@@ -9,9 +9,11 @@ linear prompt-and-generate path.
 from __future__ import annotations
 
 import json
+import time
 import requests
 
 import rag_search
+from tracer import estimate_prompt_tokens, trace_llm_call
 import rag_config as cfg
 from astro_engine import (
     _features_to_chart_facts,
@@ -21,6 +23,7 @@ from astro_engine import (
     query_ollama_once,
     resolve_ollama_config,
 )
+from text_utils import extract_ref_ids
 from dashas import format_dasha_timeline
 from intent_router import detect_intent as _detect_intent
 from text_utils import strip_reasoning_blocks
@@ -226,6 +229,7 @@ def _call_ollama_chat(
     }
     if tools:
         payload["tools"] = tools
+    t0 = time.perf_counter()
     try:
         resp = requests.post(
             OLLAMA_CHAT_URL,
@@ -233,7 +237,14 @@ def _call_ollama_chat(
             timeout=(10, timeout_s),
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        trace_llm_call(
+            model=model_name,
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            prompt_tokens_est=estimate_prompt_tokens(str(messages)),
+            stage="agent_chat",
+        )
+        return data
     except requests.exceptions.Timeout:
         print("[agent_loop] chat call timed out", flush=True)
         return None
@@ -336,6 +347,8 @@ def run_agent_loop(
     ]
 
     tool_calls_made: list[str] = []
+    # Track ref ids seen in rag_search tool results for post-answer stripping.
+    seen_rag_refs: list[str] = []
     turns_taken = 0
 
     while turns_taken < MAX_AGENT_TURNS:
@@ -354,10 +367,13 @@ def run_agent_loop(
         tool_calls: list = msg.get("tool_calls") or []
 
         if not tool_calls:
-            # Model produced a direct answer — done.
+            # Model produced a direct answer — strip any refs not seen in tool results.
             if content.strip():
+                answer = strip_reasoning_blocks(content.strip())
+                if seen_rag_refs:
+                    answer, _ = _strip_unknown_refs(answer, seen_rag_refs)
                 return {
-                    "answer": strip_reasoning_blocks(content.strip()),
+                    "answer": answer,
                     "method": "agent",
                     "tool_calls_made": tool_calls_made,
                     "error": None,
@@ -373,12 +389,23 @@ def run_agent_loop(
             fn = tc.get("function", {})
             tool_name: str = fn.get("name", "")
             raw_args = fn.get("arguments", {})
-            tool_args: dict = raw_args if isinstance(raw_args, dict) else {}
+            if isinstance(raw_args, dict):
+                tool_args: dict = raw_args
+            elif isinstance(raw_args, str):
+                try:
+                    tool_args = json.loads(raw_args) if raw_args.strip() else {}
+                except (json.JSONDecodeError, ValueError):
+                    tool_args = {}
+            else:
+                tool_args = {}
 
             print(f"[agent_loop] tool_call: {tool_name}({tool_args})", flush=True)
             tool_calls_made.append(tool_name)
 
             result = _dispatch_tool(tool_name, tool_args, features, resolved_timeout)
+            # Collect ref ids returned by rag_search so we can validate the final answer.
+            if tool_name == "rag_search":
+                seen_rag_refs.extend(extract_ref_ids(result))
             messages.append({"role": "tool", "content": result})
 
         turns_taken += 1

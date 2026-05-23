@@ -9,15 +9,51 @@ source venv/bin/activate
 ```
 
 ```bash
-python astro_engine.py --model deepseek-r1:7b --timeout 120
+python astro_engine.py --model qwen2.5:7b-instruct --timeout 120
 ```
 
 ```bash
-python evaluate_career.py --eval-type career --runs 1 --model deepseek-r1:7b --timeout 120 --workers 2 --output career_eval_report.json --history eval_history.json
+python evaluate_career.py --eval-type career --runs 1 --model qwen2.5:7b-instruct --timeout 120 --workers 2 --output career_eval_report.json --history eval_history.json
 ```
 
 ```bash
 streamlit run app.py
+```
+
+## Setup
+
+### 1. Install Ollama and pull required models
+
+```bash
+# Install Ollama from https://ollama.com, then:
+ollama pull qwen2.5:7b-instruct   # primary generation model
+ollama pull llama3.2:3b            # intent classification model
+ollama pull nomic-embed-text       # embedding model for RAG
+```
+
+### 2. Install Python dependencies
+
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. (Optional) Build the RAG corpus index
+
+RAG retrieval requires a local ChromaDB index. Without it the app still works but answers are ungrounded. To build the index, ingest your BPHS corpus files:
+
+```bash
+python scripts/ingest_bphs_from_full_pdf_dir.py --dir data/corpus/
+```
+
+The index is written to `chroma_db/` (gitignored).
+
+### 4. Configure environment (optional)
+
+```bash
+cp .env.example .env
+# Edit .env to override model, timeout, and feature flags
 ```
 
 ## Project Overview
@@ -126,7 +162,7 @@ Typical UI flow:
 python astro_engine.py \
   --year 1998 --month 9 --day 27 --hour 13 --minute 0 --city delhi \
   --question "What is the professional outlook for this chart?" \
-  --model deepseek-r1:7b \
+  --model qwen2.5:7b-instruct \
   --timeout 120
 ```
 
@@ -140,7 +176,7 @@ Optional:
 python evaluate_career.py \
   --eval-type career \
   --runs 1 \
-  --model deepseek-r1:7b \
+  --model qwen2.5:7b-instruct \
   --timeout 120 \
   --workers 2 \
   --output career_eval_report.json \
@@ -151,7 +187,7 @@ python evaluate_career.py \
 
 ```bash
 python evaluate_intent_detection.py \
-  --model deepseek-r1:7b \
+  --model qwen2.5:7b-instruct \
   --timeout 120 \
   --output intent_detection_eval_report.json
 ```
@@ -160,7 +196,7 @@ python evaluate_intent_detection.py \
 
 ```bash
 python evaluate_intent_routing.py \
-  --model deepseek-r1:7b \
+  --model qwen2.5:7b-instruct \
   --timeout 120 \
   --workers 2 \
   --output intent_routing_eval_report.json
@@ -172,7 +208,7 @@ python evaluate_intent_routing.py \
 python evaluate_career.py \
   --eval-type career \
   --runs 3 \
-  --model deepseek-r1:7b \
+  --model qwen2.5:7b-instruct \
   --timeout 600 \
   --workers 2 \
   --output career_eval_report.json \
@@ -183,15 +219,12 @@ python evaluate_career.py \
 
 CLI overrides environment variables. Priority: **CLI > env > defaults**.
 
-Supported env vars:
-
-- `ASTRO_MODEL_NAME`
-- `ASTRO_OLLAMA_TIMEOUT_S`
+All supported env vars are documented in `.env.example` at the repo root. Copy it to `.env` and adjust values as needed.
 
 Example:
 
 ```bash
-export ASTRO_MODEL_NAME=deepseek-r1:7b
+export ASTRO_MODEL_NAME=qwen2.5:7b-instruct
 export ASTRO_OLLAMA_TIMEOUT_S=240
 python evaluate_career.py --runs 2 --workers 2
 ```
@@ -289,7 +322,7 @@ python evaluate_rag.py \
   --history rag_eval_history.json
 ```
 
-Quality targets (adjust as your golden set grows; current file has **19** cases):
+Quality targets (adjust as your golden set grows; current file has **30** cases):
 
 - `rag_recall_at_3_gold >= 0.6` was the original v0 bar on a small set; full-book
   tuning aims for **1.0** on the maintained goldens when the index is complete.

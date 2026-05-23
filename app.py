@@ -12,20 +12,23 @@ from astro_engine import (
     build_prompt_for_intent,
     build_chart_features,
     resolve_ollama_config,
+    query_ollama_once,
 )
 from agent_loop import run_agent_loop
 from conversation import ConversationBuffer, make_summarize_fn
 from intent_router import detect_intent
+import rag_config as cfg
+from prompts.schema import domain_response_json_schema
 from response_sections import parse_structured_answer
 from text_utils import extract_ref_ids, format_consumer_text, strip_reasoning_blocks
-from utils import CITY_COORDINATES
+from cities import CITY_COORDINATES, CityResolutionError
 
 
 def run_ollama_ui_query_stream(prompt, model_name=None, timeout_s=None):
     """Yield streaming text chunks and return final error code."""
     try:
         requests.get("http://localhost:11434/api/tags", timeout=(2, 3))
-        response = _call_ollama(
+        response, _ = _call_ollama(
             prompt,
             stream=True,
             temperature=0.2,
@@ -54,7 +57,7 @@ def run_ollama_ui_query_stream(prompt, model_name=None, timeout_s=None):
         yield "", "request"
 
 
-def _city_options():
+def _city_quick_picks():
     return sorted(CITY_COORDINATES.keys())
 
 
@@ -253,12 +256,11 @@ def main():
     st.caption("Interactive Vedic astrology analysis powered by your local Ollama model.")
 
     sb = st.session_state.saved_birth
-    cities = _city_options()
-    city_index = cities.index(sb["city_name"]) if sb["city_name"] in cities else 0
+    quick_picks = _city_quick_picks()
 
     birth_expanded = not bool(st.session_state.chat_history)
     with st.expander("Birth details (IST)", expanded=birth_expanded):
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             st.date_input(
                 "Birth date",
@@ -273,14 +275,14 @@ def main():
                 disabled=st.session_state.is_processing,
                 key="birth_time_input",
             )
-        with col3:
-            st.selectbox(
-                "Birth city",
-                options=cities,
-                index=city_index,
-                disabled=st.session_state.is_processing,
-                key="birth_city_input",
-            )
+        st.text_input(
+            "Birth city",
+            value=sb["city_name"],
+            placeholder="e.g. Delhi, India or pune",
+            disabled=st.session_state.is_processing,
+            key="birth_city_input",
+            help=f"Quick picks: {', '.join(quick_picks)}",
+        )
 
     if st.session_state.pending_request:
         request_data = st.session_state.pending_request
@@ -292,10 +294,6 @@ def main():
         agent_loop_enabled = bool(request_data.get("agent_loop_enabled", False))
         model_input = request_data["model_input"]
         timeout_input = request_data["timeout_input"]
-
-        if city_name.lower() not in CITY_COORDINATES:
-            st.warning("Selected city was not recognized. Falling back to bengaluru.")
-            city_name = "bengaluru"
 
         model_override = model_input.strip() or None
         resolved_model, resolved_timeout, resolved_num_ctx = resolve_ollama_config(
@@ -323,41 +321,45 @@ def main():
             )
 
             with st.spinner("Computing chart and querying model..."):
-                features = build_chart_features(
-                    birth_date.year,
-                    birth_date.month,
-                    birth_date.day,
-                    birth_time.hour,
-                    birth_time.minute,
-                    city_name,
-                )
                 try:
-                    intent_info = detect_intent(
-                        question=cleaned_question,
-                        timeout_s=min(45, resolved_timeout),
+                    features = build_chart_features(
+                        birth_date.year,
+                        birth_date.month,
+                        birth_date.day,
+                        birth_time.hour,
+                        birth_time.minute,
+                        city_name,
                     )
-                except Exception:
-                    intent_info = {
-                        "intent": "general",
-                        "method": "rules_fallback",
-                        "confidence": 0.0,
-                        "rule_scores": {},
-                    }
-                chosen_intent = intent_info.get("intent", "general")
-
-                if agent_loop_enabled:
-                    agent_result = run_agent_loop(
-                        user_question=cleaned_question,
-                        features=features,
-                        intent=chosen_intent,
-                        model_name=resolved_model,
-                        timeout_s=resolved_timeout,
-                        num_ctx=resolved_num_ctx,
-                        rag_enabled=rag_enabled,
-                        prior_context=prior_context or None,
-                    )
+                except CityResolutionError as exc:
+                    st.error(str(exc))
                 else:
-                    if rag_enabled:
+                    try:
+                        intent_info = detect_intent(
+                            question=cleaned_question,
+                            timeout_s=min(45, resolved_timeout),
+                        )
+                    except Exception as exc:
+                        print(f"[intent] detection failed ({exc}), falling back to general", flush=True)
+                        intent_info = {
+                            "intent": "general",
+                            "method": "rules_fallback",
+                            "confidence": 0.0,
+                            "rule_scores": {},
+                        }
+                    chosen_intent = intent_info.get("intent", "general")
+
+                    if agent_loop_enabled:
+                        agent_result = run_agent_loop(
+                            user_question=cleaned_question,
+                            features=features,
+                            intent=chosen_intent,
+                            model_name=resolved_model,
+                            timeout_s=resolved_timeout,
+                            num_ctx=resolved_num_ctx,
+                            rag_enabled=rag_enabled,
+                            prior_context=prior_context or None,
+                        )
+                    elif rag_enabled:
                         rag_bundle = build_rag_enriched_prompt(
                             features,
                             cleaned_question,
@@ -373,94 +375,113 @@ def main():
                             prior_context=prior_context or None,
                         )
 
-            stream_ph = st.empty()
-            if agent_loop_enabled and agent_result is not None:
-                final_answer = agent_result.get("answer", "") or ""
-            else:
-                with st.spinner("Generating response..."):
-                    for text_chunk, possible_error in run_ollama_ui_query_stream(
-                        prompt,
-                        model_name=resolved_model,
-                        timeout_s=resolved_timeout,
-                    ):
-                        if possible_error:
-                            error_code = possible_error
-                            break
-                        final_answer += text_chunk
-                        stream_ph.markdown(strip_reasoning_blocks(final_answer) + "▌")
-                final_answer = strip_reasoning_blocks(final_answer)
-                stream_ph.empty()
+            if features is not None:
+                stream_ph = st.empty()
+                if agent_loop_enabled and agent_result is not None:
+                    final_answer = agent_result.get("answer", "") or ""
+                elif cfg.STRUCTURED_OUTPUT_ENABLED:
+                    # Structured output requires non-streaming; enforce JSON schema via Ollama format=.
+                    with st.spinner("Generating structured response..."):
+                        raw = query_ollama_once(
+                            prompt,
+                            temperature=0.2,
+                            timeout_s=resolved_timeout,
+                            model_name=resolved_model,
+                            allowed_refs=rag_bundle.get("allowed_refs") if rag_bundle else None,
+                            num_ctx=resolved_num_ctx,
+                            response_format=domain_response_json_schema(),
+                        )
+                    if not raw:
+                        error_code = "request"
+                    else:
+                        final_answer = strip_reasoning_blocks(raw)
+                    stream_ph.empty()
+                else:
+                    with st.spinner("Generating response..."):
+                        for text_chunk, possible_error in run_ollama_ui_query_stream(
+                            prompt,
+                            model_name=resolved_model,
+                            timeout_s=resolved_timeout,
+                        ):
+                            if possible_error:
+                                error_code = possible_error
+                                break
+                            final_answer += text_chunk
+                            stream_ph.markdown(strip_reasoning_blocks(final_answer) + "▌")
+                    final_answer = strip_reasoning_blocks(final_answer)
+                    stream_ph.empty()
 
-            if error_code == "connection":
-                st.error("Could not connect to Ollama at `http://localhost:11434`. Start Ollama and retry.")
-            elif error_code == "timeout":
-                st.error(
-                    f"The request timed out after {resolved_timeout}s. "
-                    "Try increasing timeout in Agent settings or using a smaller model."
-                )
-            elif error_code:
-                st.error("Model call failed unexpectedly. Please retry.")
-            elif not final_answer.strip():
-                st.warning(
-                    "No response text was returned by Ollama. Try a smaller model, higher timeout, or restart Ollama."
-                )
-            else:
-                if not agent_loop_enabled and rag_enabled and rag_bundle and rag_bundle.get("allowed_refs"):
-                    final_answer, _ = _strip_unknown_refs(final_answer, rag_bundle.get("allowed_refs"))
-
-                st.session_state.chat_history.append({"role": "assistant", "content": final_answer})
-                st.session_state.conversation_buffer.add(cleaned_question, final_answer)
-                st.session_state.saved_birth = {
-                    "birth_date": birth_date,
-                    "birth_time": birth_time,
-                    "city_name": city_name,
-                }
-                st.session_state.last_features = features
-                st.session_state.last_question = cleaned_question
-                st.session_state.last_prompt_preview = prompt or ""
-                st.session_state.last_retrieved_rows = _chunks_to_serializable(
-                    (rag_bundle or {}).get("retrieved", [])
-                )
-                st.success("Analysis generated successfully.")
-
-                st.divider()
-                st.subheader("Run summary")
-                r1c1, r1c2, r1c3 = st.columns(3)
-                r1c1.metric("Model", resolved_model)
-                r1c2.metric(
-                    "Active Mahadasha",
-                    features["active_dasha"]["dasha"] if features["active_dasha"] else "Unknown",
-                )
-                r1c3.metric(
-                    "Active Antardasha",
-                    features["active_antardasha"]["dasha"]
-                    if features.get("active_antardasha")
-                    else "Unknown",
-                )
-                r2c1, r2c2, r2c3 = st.columns(3)
-                r2c1.metric(
-                    "Next Mahadasha",
-                    features["next_dasha"]["dasha"] if features["next_dasha"] else "Unknown",
-                )
-                r2c2.metric(
-                    "Next Antardasha",
-                    features["next_antardasha"]["dasha"]
-                    if features.get("next_antardasha")
-                    else "Unknown",
-                )
-                r2c3.metric("Detected intent", intent_info.get("intent", "general"))
-
-                rag_caption = f"RAG: {'ON' if rag_enabled else 'OFF'}"
-                if rag_enabled and rag_bundle:
-                    rag_caption += f" | Retrieved refs: {len(rag_bundle.get('allowed_refs', []))}"
-                if agent_loop_enabled and agent_result:
-                    method = agent_result.get("method", "?")
-                    tools_used = agent_result.get("tool_calls_made", [])
-                    rag_caption += (
-                        f" | Agent: {method}"
-                        + (f" | Tools: {', '.join(tools_used)}" if tools_used else "")
+                if error_code == "connection":
+                    st.error("Could not connect to Ollama at `http://localhost:11434`. Start Ollama and retry.")
+                elif error_code == "timeout":
+                    st.error(
+                        f"The request timed out after {resolved_timeout}s. "
+                        "Try increasing timeout in Agent settings or using a smaller model."
                     )
-                st.caption(rag_caption)
+                elif error_code:
+                    st.error("Model call failed unexpectedly. Please retry.")
+                elif not final_answer.strip():
+                    st.warning(
+                        "No response text was returned by Ollama. Try a smaller model, higher timeout, or restart Ollama."
+                    )
+                else:
+                    # Strip hallucinated refs on linear paths (agent loop handles its own stripping).
+                    if not agent_loop_enabled and not cfg.STRUCTURED_OUTPUT_ENABLED and rag_enabled and rag_bundle and rag_bundle.get("allowed_refs"):
+                        final_answer, _ = _strip_unknown_refs(final_answer, rag_bundle.get("allowed_refs"))
+
+                    st.session_state.chat_history.append({"role": "assistant", "content": final_answer})
+                    st.session_state.conversation_buffer.add(cleaned_question, final_answer)
+                    st.session_state.saved_birth = {
+                        "birth_date": birth_date,
+                        "birth_time": birth_time,
+                        "city_name": city_name,
+                    }
+                    st.session_state.last_features = features
+                    st.session_state.last_question = cleaned_question
+                    st.session_state.last_prompt_preview = prompt or ""
+                    st.session_state.last_retrieved_rows = _chunks_to_serializable(
+                        (rag_bundle or {}).get("retrieved", [])
+                    )
+                    st.success("Analysis generated successfully.")
+
+                    st.divider()
+                    st.subheader("Run summary")
+                    r1c1, r1c2, r1c3 = st.columns(3)
+                    r1c1.metric("Model", resolved_model)
+                    r1c2.metric(
+                        "Active Mahadasha",
+                        features["active_dasha"]["dasha"] if features["active_dasha"] else "Unknown",
+                    )
+                    r1c3.metric(
+                        "Active Antardasha",
+                        features["active_antardasha"]["dasha"]
+                        if features.get("active_antardasha")
+                        else "Unknown",
+                    )
+                    r2c1, r2c2, r2c3 = st.columns(3)
+                    r2c1.metric(
+                        "Next Mahadasha",
+                        features["next_dasha"]["dasha"] if features["next_dasha"] else "Unknown",
+                    )
+                    r2c2.metric(
+                        "Next Antardasha",
+                        features["next_antardasha"]["dasha"]
+                        if features.get("next_antardasha")
+                        else "Unknown",
+                    )
+                    r2c3.metric("Detected intent", intent_info.get("intent", "general"))
+
+                    rag_caption = f"RAG: {'ON' if rag_enabled else 'OFF'}"
+                    if rag_enabled and rag_bundle:
+                        rag_caption += f" | Retrieved refs: {len(rag_bundle.get('allowed_refs', []))}"
+                    if agent_loop_enabled and agent_result:
+                        method = agent_result.get("method", "?")
+                        tools_used = agent_result.get("tool_calls_made", [])
+                        rag_caption += (
+                            f" | Agent: {method}"
+                            + (f" | Tools: {', '.join(tools_used)}" if tools_used else "")
+                        )
+                    st.caption(rag_caption)
 
         finally:
             st.session_state.is_processing = False
