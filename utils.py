@@ -19,11 +19,5 @@ def convert_ist_to_utc(year, month, day, hour, minute):
         "hour_utc": decimal_hour
     }
 
-# Common Indian City Coordinates (for quick testing)
-CITY_COORDINATES = {
-    "bengaluru": {"lat": 12.9716, "lon": 77.5946},
-    "mumbai": {"lat": 19.0760, "lon": 72.8777},
-    "delhi": {"lat": 28.6139, "lon": 77.2090},
-    "chennai": {"lat": 13.0827, "lon": 80.2707},
-    "hyderabad": {"lat": 17.3850, "lon": 78.4867}
-}
+# Re-export for backward compatibility
+from cities import CITY_COORDINATES  # noqa: F401
