@@ -51,6 +51,7 @@ ocr_work/
 
 # --- Eval & acceptance outputs (regenerable) ---
 rag_eval_report.json
+rag_eval_report_*.json
 career_eval_report.json
 intent_routing_eval_report.json
 intent_eval_report.json
@@ -63,6 +64,9 @@ acceptance_quick_7b/
 
 # --- Large / binary reference material (keep local) ---
 *.pdf
+
+# --- Runtime traces (opt-in, local only) ---
+traces.jsonl
 
 # --- Misc scratch ---
 Untitled
