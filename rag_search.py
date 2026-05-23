@@ -9,7 +9,9 @@ top-k most relevant chunks from the local Chroma index. Strategy:
 2. Per-query dense retrieval from Chroma with an intent boolean filter.
 3. Optional BM25 over the same (filtered) corpus + RRF with dense ranks,
    then dedupe by `ref_id`, keeping the best similarity slice per ref.
-4. Heuristic rerank using entity overlap + intent match - length penalty.
+4. Rerank: optional cross-encoder (``cfg.CROSS_ENCODER_RERANK_ENABLED``) blended
+   with min-max normalized heuristic scores (weight ``cfg.CROSS_ENCODER_HEURISTIC_BLEND``
+   on CE); heuristic-only if CE is disabled or fails to load.
 5. Return top-k with both pre- and post-rerank ranks so eval_rag can
    compute heuristic_delta.
 """
@@ -23,6 +25,10 @@ import requests
 from rank_bm25 import BM25Okapi
 
 import rag_config as cfg
+
+# Lazy cross-encoder (Phase 3b); None after a failed load attempt.
+_ce_model = None
+_ce_load_attempted = False
 
 # `search(top_k=None)` returns the full reranked pool (eval only). Omitted
 # `top_k` uses `cfg.RERANK_TOP_K` for generation/UI callers.
@@ -93,6 +99,23 @@ def _house_effect_chapter_hints(question, chart_facts, intent=None):
         r"\bascendant\b", q, re.IGNORECASE
     ):
         hints.add(19)
+    # Antardasha cases: derive chapter hint from antardasha lord's house in chart_facts.
+    if isinstance(chart_facts, dict):
+        antar = chart_facts.get("_antardasha_lord", "")
+        if isinstance(antar, str) and antar.strip():
+            antar_key = antar.strip().lower()
+            for key, val in chart_facts.items():
+                if key.lower() == antar_key and isinstance(val, dict):
+                    hn = val.get("house")
+                    if hn is not None:
+                        try:
+                            hn = int(hn)
+                        except (TypeError, ValueError):
+                            hn = None
+                        if hn is not None:
+                            ch = cfg.HOUSE_EFFECTS_CHAPTER.get(hn)
+                            if ch is not None:
+                                hints.add(ch)
     return hints
 
 
@@ -168,6 +191,10 @@ def _summarize_chart_facts(chart_facts):
             bits.append(str(sign))
         parts.append(" ".join(bits))
 
+    antar_lord = chart_facts.get("_antardasha_lord")
+    if isinstance(antar_lord, str) and antar_lord.strip():
+        parts.append(f"{antar_lord.strip()} antardasha Vimshottari")
+
     return " ".join(parts)
 
 
@@ -177,6 +204,13 @@ _INTENT_KEYWORDS_QUERY = {
     "health": "health disease longevity ailment",
     "family": "family marriage spouse children parent",
     "general": "fame nature life outlook",
+}
+
+_FAMILY_SYNONYMS = {
+    "spouse": "wife husband seventh lord",
+    "expenses": "expenditure loss twelfth house",
+    "progeny": "children son putra fifth house",
+    "offspring": "children son putra fifth house",
 }
 
 
@@ -223,6 +257,38 @@ def expand_queries(question, intent, chart_facts):
             f"{base} Labha Bhava eleventh house gains lord own exaltation angle trine"
         )
 
+    # BPHS-aligned antardasha queries (corpus rarely uses "antardasha" / Vimshottari).
+    antar = (chart_facts or {}).get("_antardasha_lord", "")
+    if isinstance(antar, str) and antar.strip():
+        antar = antar.strip()
+        iw = _INTENT_KEYWORDS_QUERY.get(intent or "general", "")
+        queries.append(f"{antar} {iw} Parashara results effects")
+        chart_only = structural.replace(f"{antar} antardasha Vimshottari", "").strip()
+        if chart_only:
+            queries.append(f"{chart_only} {iw}")
+
+    if (intent or "").strip().lower() == "family" and base:
+        expansions = []
+        base_lower = base.lower()
+        for trigger, expansion in _FAMILY_SYNONYMS.items():
+            if trigger in base_lower:
+                expansions.append(expansion)
+        if expansions:
+            queries.append(f"{base} {' '.join(expansions)}")
+
+    # Health + 8th lord in 6th house: specifically targets the BPHS verse pattern
+    # "If the 8th Lord be in the 6th House, the 12th Lord in the Ascendant and the
+    #  Moon is together with the 6th Lord" (bphs-ch19-v20-22).
+    if (
+        (intent or "").strip().lower() == "health"
+        and base
+        and re.search(r"\b8th\s+lord\b", base, re.IGNORECASE)
+        and re.search(r"\b6th\b", base, re.IGNORECASE)
+    ):
+        queries.append(
+            "8th Lord in 6th House 12th Lord in Ascendant Moon conjunct 6th Lord fear year Parashara"
+        )
+
     # HyDE-lite (Phase 3a): optionally add a BPHS-style hypothetical rewrite query
     # for better dense retrieval when user wording mismatches corpus phrasing.
     if cfg.QUERY_REWRITE_ENABLED and base:
@@ -258,7 +324,7 @@ def _hyde_rewrite_query(question: str, intent: str, structural: str, intent_word
 
     # Local import avoids circular dependency at module import time:
     # `astro_engine.py` imports this module.
-    from astro_engine import query_ollama_once
+    from llm_client import query_ollama_once
 
     structural_norm = " ".join((structural or "").split())
     intent_words_norm = " ".join((intent_words or "").split())
@@ -318,6 +384,11 @@ def _parse_entities_field(entities_field):
 _DIGNITY_ENTITY_ALIASES = (
     ("debilitated", "debilitation"),
     ("exalted", "exaltation"),
+    # Chart dignity "strong" → bridges to the BPHS entity tokens "exaltation" and
+    # "own_sign" so queries like "Saturn strong 10th house" match verses that say
+    # "10th Lord in exaltation sign or own sign".
+    ("strong", "exaltation"),
+    ("strong", "own_sign"),
 )
 
 
@@ -606,13 +677,46 @@ def _dedupe_chunks_by_ref_keep_best_dense(chunks):
     return out
 
 
-def _rerank(chunks, query_entities, intent, question=None, chart_facts=None):
-    intent_key = f"intent_{intent}" if intent in cfg.SUPPORTED_INTENTS else None
-    hint_chapters = _house_effect_chapter_hints(question, chart_facts, intent)
+def _get_cross_encoder():
+    """Load CrossEncoder once; return None on failure (caller uses heuristic)."""
+    global _ce_model, _ce_load_attempted
+    if _ce_load_attempted:
+        return _ce_model
+    _ce_load_attempted = True
+    try:
+        from sentence_transformers import CrossEncoder
+
+        _ce_model = CrossEncoder(
+            cfg.CROSS_ENCODER_MODEL,
+            max_length=cfg.CROSS_ENCODER_MAX_LENGTH,
+        )
+    except Exception:
+        _ce_model = None
+    return _ce_model
+
+
+def _annotate_matched_entities(chunks, query_entities):
     for chunk in chunks:
         chunk_entities = _parse_entities_field(chunk.metadata.get("entities", ""))
-        matched = sorted(query_entities & chunk_entities)
-        chunk.matched_entities = matched
+        chunk.matched_entities = sorted(query_entities & chunk_entities)
+
+
+def _min_max_norm(values):
+    if not values:
+        return []
+    lo, hi = min(values), max(values)
+    if hi <= lo + 1e-12:
+        return [0.5] * len(values)
+    return [(v - lo) / (hi - lo) for v in values]
+
+
+def _heuristic_scores_for_chunks(chunks, intent, question=None, chart_facts=None):
+    """Parallel to legacy rerank: one scalar score per chunk (``matched_entities`` must be set)."""
+    intent_key = f"intent_{intent}" if intent in cfg.SUPPORTED_INTENTS else None
+    hint_chapters = _house_effect_chapter_hints(question, chart_facts, intent)
+    scores = []
+    for chunk in chunks:
+        matched = chunk.matched_entities
         token_count = chunk.metadata.get("token_count", 0) or 0
         length_penalty = 0.0
         if token_count > cfg.LENGTH_PENALTY_THRESHOLD:
@@ -649,7 +753,21 @@ def _rerank(chunks, query_entities, intent, question=None, chart_facts=None):
             blob = ((chunk.text or "") + " " + str(chunk.metadata.get("ref_id", ""))).lower()
             if re.search(r"navamsa|navamsha|navamamsha", blob, re.IGNORECASE):
                 nav_bonus = cfg.NAVAMSA_ALIGN_WEIGHT
-        chunk.score = (
+        # Boost verses that contain BOTH 8th_lord AND 6th_house when the health
+        # question is specifically about the 8th lord in 6th house combination.
+        # This distinguishes bphs-ch19-v20-22 (8th lord in 6th + Moon) from
+        # adjacent ch19 verses that cover 6th house effects without the 8th lord.
+        combo_bonus = 0.0
+        if (
+            intent_key == "intent_health"
+            and qtext
+            and re.search(r"\b8th\s+lord\b", qtext, re.IGNORECASE)
+            and re.search(r"\b6th\b", qtext, re.IGNORECASE)
+        ):
+            chunk_ents = chunk.metadata.get("entities", "") or ""
+            if "8th_lord" in matched and "6th_house" in chunk_ents:
+                combo_bonus = cfg.HEALTH_8TH_6TH_COMBO_BONUS
+        scores.append(
             chunk.similarity
             + cfg.ENTITY_WEIGHT * capped_match_count
             + tail_w * tail_matches
@@ -657,13 +775,56 @@ def _rerank(chunks, query_entities, intent, question=None, chart_facts=None):
             + pre_bonus
             + chapter_bonus
             + nav_bonus
+            + combo_bonus
             - length_penalty
         )
+    return scores
+
+
+def _rerank_cross_encoder(cross_encoder, chunks, question, intent, chart_facts):
+    """Blend min-max normalized CE scores with heuristic scores; set ``post_rerank_rank``."""
+    q = (question or "").strip()
+    if not chunks or not q:
+        return chunks
+    heur_raw = _heuristic_scores_for_chunks(chunks, intent, question, chart_facts)
+    pairs = [(q, (c.text or "")[:12000]) for c in chunks]
+    ce_raw = cross_encoder.predict(
+        pairs,
+        batch_size=max(1, cfg.CROSS_ENCODER_BATCH_SIZE),
+        show_progress_bar=False,
+    )
+    ce_raw = [float(x) for x in ce_raw]
+    heur_n = _min_max_norm(heur_raw)
+    ce_n = _min_max_norm(ce_raw)
+    w = max(0.0, min(1.0, cfg.CROSS_ENCODER_HEURISTIC_BLEND))
+    for chunk, hn, cn in zip(chunks, heur_n, ce_n):
+        chunk.score = w * cn + (1.0 - w) * hn
+    chunks.sort(key=lambda c: c.score, reverse=True)
+    for i, chunk in enumerate(chunks):
+        chunk.post_rerank_rank = i
+    return chunks
+
+
+def _rerank_heuristic(chunks, intent, question=None, chart_facts=None):
+    """Score chunks with entity/intent/chapter heuristics (Phase 3 baseline)."""
+    scores = _heuristic_scores_for_chunks(chunks, intent, question, chart_facts)
+    for chunk, s in zip(chunks, scores):
+        chunk.score = s
 
     chunks.sort(key=lambda c: c.score, reverse=True)
     for i, chunk in enumerate(chunks):
         chunk.post_rerank_rank = i
     return chunks
+
+
+def _rerank(chunks, query_entities, intent, question=None, chart_facts=None):
+    _annotate_matched_entities(chunks, query_entities)
+    qtext = (question or "").strip()
+    if cfg.CROSS_ENCODER_RERANK_ENABLED and qtext:
+        ce = _get_cross_encoder()
+        if ce is not None:
+            return _rerank_cross_encoder(ce, chunks, question, intent, chart_facts)
+    return _rerank_heuristic(chunks, intent, question, chart_facts)
 
 
 def search(

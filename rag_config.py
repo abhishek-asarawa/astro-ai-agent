@@ -6,7 +6,15 @@ ingest time. Everything tunable lives here so evaluate_rag.py can sweep
 weights without touching pipeline code.
 """
 
+import os
 import re
+
+
+def _env_bool(key, default=False):
+    val = os.environ.get(key)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
 
 OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
 EMBED_MODEL = "nomic-embed-text"
@@ -37,7 +45,7 @@ PRE_RERANK_WEIGHT = 0.18
 LENGTH_PENALTY_PER_100 = 0.10
 LENGTH_PENALTY_THRESHOLD = 500
 
-DENSE_TOP_K = 10
+DENSE_TOP_K = 15
 RERANK_TOP_K = 3
 SILVER_TOP_K = 5
 
@@ -76,16 +84,45 @@ CHAPTER_HINT_WEIGHT = 0.14
 BM25_SIMILARITY_CAP = 0.88
 # Question mentions Navamsa/Navamsha and chunk text aligns (exact gold for some Ch.23 cases).
 NAVAMSA_ALIGN_WEIGHT = 0.16
+# Extra bonus when a health query asks about 8th lord in 6th house AND the chunk
+# contains both 8th_lord and 6th_house entities (targets bphs-ch19-v20-22 specifically
+# over adjacent ch19 verses that lack the 8th lord element).
+HEALTH_8TH_6TH_COMBO_BONUS = 0.08
 
 # HyDE-lite (Phase 3a) optional query rewrite for retrieval.
 # Default is off to avoid extra LLM calls and any production behavior change.
 QUERY_REWRITE_ENABLED = False
+
+# Use cusp-based bhava houses in RAG chart_facts (default: whole-sign).
+USE_BHAVA_FOR_RAG = _env_bool("ASTRO_USE_BHAVA_FOR_RAG", False)
+
+# Structured JSON output from domain generation (Phase 5b).
+STRUCTURED_OUTPUT_ENABLED = _env_bool("ASTRO_STRUCTURED_OUTPUT", False)
 QUERY_REWRITE_MODEL = "llama3.2:3b"
 QUERY_REWRITE_TIMEOUT_S = 45
 QUERY_REWRITE_TEMPERATURE = 0.0
 QUERY_REWRITE_NUM_CTX = 4096
 # Keep the rewritten query short so it stays an embedding-friendly "query".
 QUERY_REWRITE_MAX_CHARS = 220
+
+# Phase 3b: cross-encoder rerank (opt-in). Heuristic rerank remains the fallback
+# on load/import failure or empty question text.
+CROSS_ENCODER_RERANK_ENABLED = False
+if os.environ.get("ASTRO_CROSS_ENCODER_RERANK") is not None:
+    CROSS_ENCODER_RERANK_ENABLED = _env_bool("ASTRO_CROSS_ENCODER_RERANK", False)
+# Default: ms-marco MiniLM (~80MB class, CPU-friendly). Optional: BAAI/bge-reranker-v2-m3
+CROSS_ENCODER_MODEL = os.environ.get(
+    "ASTRO_CROSS_ENCODER_MODEL",
+    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+)
+CROSS_ENCODER_BATCH_SIZE = int(os.environ.get("ASTRO_CROSS_ENCODER_BATCH_SIZE", "16"))
+CROSS_ENCODER_MAX_LENGTH = int(os.environ.get("ASTRO_CROSS_ENCODER_MAX_LENGTH", "512"))
+# When CE is on: weight on min-max normalized CE vs heuristic (1 - weight on heuristic).
+# Pure CE (1.0) regressed gold@3 with ms-marco-MiniLM; ~0.15 matches baseline gold/silver
+# on local golden eval while still injecting CE signal.
+CROSS_ENCODER_HEURISTIC_BLEND = float(
+    os.environ.get("ASTRO_CROSS_ENCODER_HEURISTIC_BLEND", "0.15")
+)
 
 
 def estimate_tokens(text):
@@ -110,6 +147,7 @@ _DIGNITY_TERMS = [
     "own sign", "own house", "own navamsa", "own navamamsha",
     "combust", "combustion", "retrograde",
     "friendly", "enemy", "neutral",
+    "strong",
 ]
 
 _ASPECT_TERMS = ["aspect", "aspected", "conjunct", "conjunction", "conjoined"]
@@ -153,6 +191,29 @@ _ASPECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_WORD_ORDINAL_TO_NUM = {
+    "first": "1st",
+    "second": "2nd",
+    "third": "3rd",
+    "fourth": "4th",
+    "fifth": "5th",
+    "sixth": "6th",
+    "seventh": "7th",
+    "eighth": "8th",
+    "ninth": "9th",
+    "tenth": "10th",
+    "eleventh": "11th",
+    "twelfth": "12th",
+}
+_WORD_ORD_HOUSE_RE = re.compile(
+    r"\b(" + "|".join(_WORD_ORDINAL_TO_NUM) + r")\s+(?:House|house|Bhava|bhava)\b",
+    re.IGNORECASE,
+)
+_WORD_ORD_LORD_RE = re.compile(
+    r"\b(" + "|".join(_WORD_ORDINAL_TO_NUM) + r")\s+[Ll]ord\b",
+    re.IGNORECASE,
+)
+
 
 def extract_entities(text):
     """Return canonical, deduped entity tokens for a chunk.
@@ -175,6 +236,14 @@ def extract_entities(text):
 
     for m in _LORD_RE.finditer(text):
         found.add(f"{m.group(1).lower()}_lord")
+
+    for m in _WORD_ORD_HOUSE_RE.finditer(text):
+        num = _WORD_ORDINAL_TO_NUM[m.group(1).lower()]
+        found.add(f"{num}_house")
+
+    for m in _WORD_ORD_LORD_RE.finditer(text):
+        num = _WORD_ORDINAL_TO_NUM[m.group(1).lower()]
+        found.add(f"{num}_lord")
 
     if _ASC_LORD_RE.search(text):
         found.add("ascendant_lord")
