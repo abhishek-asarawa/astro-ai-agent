@@ -58,13 +58,7 @@ DEFAULT_ROUTING_CASES = [
     },
 ]
 
-TEMPLATE_MARKERS = {
-    "career": ["careersummary:", "evidence:", "careerrisk:", "careeropportunity:", "confidence:"],
-    "health": ["healthsummary:", "evidence:", "healthrisk:", "healthopportunity:", "confidence:"],
-    "wealth": ["wealthsummary:", "evidence:", "wealthrisk:", "wealthopportunity:", "confidence:"],
-    "family": ["familysummary:", "evidence:", "familyrisk:", "familyopportunity:", "confidence:"],
-    "general": ["overallsummary:", "evidence:", "overallrisk:", "overallopportunity:", "confidence:"],
-}
+from eval_template_markers import TEMPLATE_MARKERS, score_template_adherence
 
 
 def score_keyword_coverage(response, expected_keywords):
@@ -73,13 +67,6 @@ def score_keyword_coverage(response, expected_keywords):
     text = response.lower()
     hits = sum(1 for kw in expected_keywords if kw.lower() in text)
     return hits / max(1, len(expected_keywords))
-
-
-def score_template_adherence(response, expected_intent):
-    markers = TEMPLATE_MARKERS.get(expected_intent, TEMPLATE_MARKERS["general"])
-    text = response.lower()
-    hits = sum(1 for marker in markers if marker in text)
-    return hits / len(markers)
 
 
 def run_one(case, model_name, timeout_s, num_ctx):

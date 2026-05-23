@@ -127,8 +127,13 @@ def chart_context_to_minimal_features(chart_context):
         lagna = str(lagna)
     planets = {}
     dignities = {}
+    active_antardasha = {}
+    antar_lord = ctx.get("_antardasha_lord")
+    if isinstance(antar_lord, str) and antar_lord.strip():
+        active_antardasha = {"dasha": antar_lord.strip()}
+
     for key, payload in ctx.items():
-        if key == "lagna" or not isinstance(payload, dict):
+        if key in ("lagna", "_antardasha_lord") or not isinstance(payload, dict):
             continue
         pname = (key[:1].upper() + key[1:].lower()) if key else key
         sign = payload.get("sign") or payload.get("rashi") or "Unknown"
@@ -151,6 +156,7 @@ def chart_context_to_minimal_features(chart_context):
         "dasha_timeline": [],
         "active_dasha": {},
         "next_dasha": {},
+        "active_antardasha": active_antardasha,
     }
 
 
@@ -401,6 +407,9 @@ def evaluate(
         "outcomes_checksum": _outcomes_checksum(details),
         "dense_top_k": cfg.DENSE_TOP_K,
         "rerank_top_k": cfg.RERANK_TOP_K,
+        "cross_encoder_rerank": cfg.CROSS_ENCODER_RERANK_ENABLED,
+        "cross_encoder_model": cfg.CROSS_ENCODER_MODEL,
+        "cross_encoder_heuristic_blend": cfg.CROSS_ENCODER_HEURISTIC_BLEND,
         "reranker_weights": {
             "entity_weight": cfg.ENTITY_WEIGHT,
             "entity_match_cap": cfg.ENTITY_MATCH_CAP,
@@ -708,11 +717,18 @@ def parse_args():
         action="store_true",
         help="When using --judge-model, skip embedding similarity vs retrieved chunks (faster).",
     )
+    parser.add_argument(
+        "--cross-encoder",
+        action="store_true",
+        help="Enable cross-encoder rerank (sets rag_config.CROSS_ENCODER_RERANK_ENABLED for this run).",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
+    if args.cross_encoder:
+        cfg.CROSS_ENCODER_RERANK_ENABLED = True
     _, _, intent_num_ctx = resolve_ollama_config(
         model_name=args.intent_model,
         timeout_s=None,
@@ -725,7 +741,8 @@ if __name__ == "__main__":
     )
     print(
         f"Evaluating RAG: golden={args.golden} db={args.db_path} embed={cfg.EMBED_MODEL} "
-        f"golden_intent={args.golden_intent} intent_num_ctx={intent_num_ctx}",
+        f"golden_intent={args.golden_intent} intent_num_ctx={intent_num_ctx} "
+        f"cross_encoder_rerank={cfg.CROSS_ENCODER_RERANK_ENABLED}",
         flush=True,
     )
     if args.judge_model:

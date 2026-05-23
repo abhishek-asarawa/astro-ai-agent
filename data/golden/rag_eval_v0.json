@@ -286,5 +286,64 @@
     "chart_context": {},
     "gold_citations": ["bphs-ch36-v2-7"],
     "silver_citations": ["bphs-ch36-v8-10", "bphs-ch36-v4"]
+  },
+  {
+    "case_id": "career_saturn_md_moon_antar",
+    "question": "What career effects arise during Moon antardasha under Saturn mahadasha for karma and profession?",
+    "expected_intent": "career",
+    "chart_context": {
+      "lagna": "Taurus",
+      "saturn": {"house": 10, "dignity": "strong"},
+      "_antardasha_lord": "Moon"
+    },
+    "gold_citations": ["bphs-ch23-v2"],
+    "silver_citations": ["bphs-ch23-v8-10", "bphs-ch23-v14"]
+  },
+  {
+    "case_id": "health_mars_antar_6th",
+    "question": "How does Mars antardasha affect health when the 6th house is afflicted?",
+    "expected_intent": "health",
+    "chart_context": {
+      "lagna": "Cancer",
+      "mars": {"house": 6, "dignity": "6th lord"},
+      "_antardasha_lord": "Mars"
+    },
+    "gold_citations": ["bphs-ch19-v1"],
+    "silver_citations": ["bphs-ch19-v3-5", "bphs-ch19-v9-12"]
+  },
+  {
+    "case_id": "wealth_jupiter_antar_11th",
+    "question": "What gains are indicated during Jupiter antardasha when the 11th lord is strong?",
+    "expected_intent": "wealth",
+    "chart_context": {
+      "lagna": "Leo",
+      "jupiter": {"house": 11, "dignity": "strong 11th lord"},
+      "_antardasha_lord": "Jupiter"
+    },
+    "gold_citations": ["bphs-ch24-v2"],
+    "silver_citations": ["bphs-ch24-v3", "bphs-ch24-v10"]
+  },
+  {
+    "case_id": "family_venus_antar_7th",
+    "question": "How does Venus antardasha influence marriage and spouse happiness?",
+    "expected_intent": "family",
+    "chart_context": {
+      "lagna": "Libra",
+      "venus": {"house": 7, "dignity": "7th lord"},
+      "_antardasha_lord": "Venus"
+    },
+    "gold_citations": ["bphs-ch20-v18"],
+    "silver_citations": ["bphs-ch20-v19-21", "bphs-ch20-v26"]
+  },
+  {
+    "case_id": "general_rahu_antar",
+    "question": "What broad life trends apply during Rahu antardasha in Vimshottari dasha?",
+    "expected_intent": "general",
+    "chart_context": {
+      "lagna": "Scorpio",
+      "_antardasha_lord": "Rahu"
+    },
+    "gold_citations": ["bphs-ch46-v15-21"],
+    "silver_citations": ["bphs-ch6-v19-23", "bphs-ch35-v2-8"]
   }
 ]

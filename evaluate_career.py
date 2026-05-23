@@ -9,13 +9,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from astro_engine import (
     build_chart_features,
-    build_career_prompt,
+    build_prompt_for_intent,
     build_rag_enriched_prompt,
     generate_full_chart,
     query_ollama_once,
     resolve_ollama_config,
 )
 from eval_grounding import run_grounding_judge, score_grounding_embedding
+from eval_template_markers import score_template_adherence
 
 
 DEFAULT_CASES = [
@@ -23,13 +24,64 @@ DEFAULT_CASES = [
         "id": "case_delhi_1998",
         "birth": {"year": 1998, "month": 9, "day": 27, "hour": 13, "minute": 0, "city_name": "delhi"},
         "question": "What is the professional outlook for this chart?",
+        "expected_intent": "career",
         "expected_keywords": ["10th", "dasha", "career", "confidence"],
     },
     {
         "id": "case_bengaluru_1994",
         "birth": {"year": 1994, "month": 2, "day": 17, "hour": 12, "minute": 30, "city_name": "bengaluru"},
         "question": "How stable is career growth in the next few years?",
+        "expected_intent": "career",
         "expected_keywords": ["growth", "risk", "opportunity", "dasha"],
+    },
+    {
+        "id": "health_delhi_1996",
+        "birth": {"year": 1996, "month": 12, "day": 26, "hour": 19, "minute": 0, "city_name": "delhi"},
+        "question": "Do you see health concerns or recovery periods soon?",
+        "expected_intent": "health",
+        "expected_keywords": ["health", "risk", "opportunity", "confidence"],
+    },
+    {
+        "id": "health_bengaluru_1994",
+        "birth": {"year": 1994, "month": 2, "day": 17, "hour": 12, "minute": 30, "city_name": "bengaluru"},
+        "question": "What does the chart suggest about vitality and illness timing?",
+        "expected_intent": "health",
+        "expected_keywords": ["health", "6th", "dasha", "confidence"],
+    },
+    {
+        "id": "wealth_delhi_1996",
+        "birth": {"year": 1996, "month": 12, "day": 26, "hour": 19, "minute": 0, "city_name": "delhi"},
+        "question": "How strong are my wealth and savings prospects?",
+        "expected_intent": "wealth",
+        "expected_keywords": ["wealth", "risk", "opportunity", "confidence"],
+    },
+    {
+        "id": "wealth_mumbai_1992",
+        "birth": {"year": 1992, "month": 1, "day": 11, "hour": 8, "minute": 45, "city_name": "mumbai"},
+        "question": "Will income and gains improve in the current dasha period?",
+        "expected_intent": "wealth",
+        "expected_keywords": ["wealth", "gains", "dasha", "confidence"],
+    },
+    {
+        "id": "family_chennai_1991",
+        "birth": {"year": 1991, "month": 7, "day": 5, "hour": 6, "minute": 20, "city_name": "chennai"},
+        "question": "How does family and married life look?",
+        "expected_intent": "family",
+        "expected_keywords": ["family", "risk", "opportunity", "confidence"],
+    },
+    {
+        "id": "family_mumbai_1992",
+        "birth": {"year": 1992, "month": 1, "day": 11, "hour": 8, "minute": 45, "city_name": "mumbai"},
+        "question": "What is the outlook for domestic happiness and children?",
+        "expected_intent": "family",
+        "expected_keywords": ["family", "4th", "dasha", "confidence"],
+    },
+    {
+        "id": "career_saturn_md_moon_ad",
+        "birth": {"year": 1979, "month": 6, "day": 15, "hour": 10, "minute": 0, "city_name": "delhi"},
+        "question": "How does Moon antardasha under Saturn mahadasha affect career stability now?",
+        "expected_intent": "career",
+        "expected_keywords": ["career", "moon", "saturn", "antardasha", "dasha"],
     },
 ]
 
@@ -50,10 +102,11 @@ def build_enriched_prompt(eval_type, case):
     """Build enriched prompt for selected evaluation type."""
     if eval_type == "career":
         birth = case["birth"]
+        intent = case.get("expected_intent", "career")
         features = build_chart_features(
             birth["year"], birth["month"], birth["day"], birth["hour"], birth["minute"], birth["city_name"]
         )
-        return build_career_prompt(features, case["question"])
+        return build_prompt_for_intent(features, case["question"], intent)
     raise ValueError(f"Unsupported eval_type: {eval_type}")
 
 
@@ -76,19 +129,6 @@ def score_keyword_coverage(response, expected_keywords):
     return hits / max(1, len(expected_keywords))
 
 
-def score_template_adherence(response):
-    required_markers = [
-        "careersummary:",
-        "evidence:",
-        "careerrisk:",
-        "careeropportunity:",
-        "confidence:",
-    ]
-    text = response.lower()
-    hits = sum(1 for marker in required_markers if marker in text)
-    return hits / len(required_markers)
-
-
 def run_once(
     eval_type,
     case,
@@ -108,7 +148,8 @@ def run_once(
         features = build_chart_features(
             birth["year"], birth["month"], birth["day"], birth["hour"], birth["minute"], birth["city_name"]
         )
-        bundle = build_rag_enriched_prompt(features, case["question"], "career")
+        intent = case.get("expected_intent", "career")
+        bundle = build_rag_enriched_prompt(features, case["question"], intent)
         response = query_ollama_once(
             bundle["prompt"],
             temperature=0.2,
@@ -116,9 +157,12 @@ def run_once(
             model_name=model_name,
             allowed_refs=bundle["allowed_refs"],
             num_ctx=num_ctx,
+            intent=intent,
+            rag_active=bundle.get("rag_active", False),
+            ref_count=len(bundle.get("allowed_refs") or []),
         )
         keyword_score = score_keyword_coverage(response, case["expected_keywords"])
-        template_score = score_template_adherence(response)
+        template_score = score_template_adherence(response, intent)
         citation_count = len(re.findall(r"\[ref:[^\]]+\]", response))
         retrieved = bundle.get("retrieved") or []
         out = {
@@ -169,7 +213,8 @@ def run_once(
         num_ctx=num_ctx,
     )
     keyword_score = score_keyword_coverage(response, case["expected_keywords"])
-    template_score = score_template_adherence(response) if enriched else 0.0
+    intent = case.get("expected_intent", "career")
+    template_score = score_template_adherence(response, intent) if enriched else 0.0
     return {
         "response": response,
         "keyword_score": round(keyword_score, 3),

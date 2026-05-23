@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 _SUMMARY = (
@@ -45,6 +46,37 @@ def parse_structured_answer(text: str | None) -> dict:
     if not text or not str(text).strip():
         return out
     t = str(text).strip()
+
+    # JSON structured output (Phase 5b)
+    if t.startswith("{") or t.startswith("```"):
+        raw = t
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+            raw = re.sub(r"\s*```\s*$", "", raw)
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                out["summary"] = (data.get("summary") or "").strip() or None
+                ev = data.get("evidence")
+                if isinstance(ev, list):
+                    out["evidence"] = "\n".join(f"- {x}" for x in ev if str(x).strip())
+                elif isinstance(ev, str):
+                    out["evidence"] = ev.strip() or None
+                out["risk"] = (data.get("risk") or "").strip() or None
+                out["opportunity"] = (data.get("opportunity") or "").strip() or None
+                conf = data.get("confidence")
+                if conf is not None:
+                    out["confidence"] = str(conf)
+                    try:
+                        out["confidence_int"] = int(conf)
+                    except (TypeError, ValueError):
+                        out["confidence_int"] = None
+                out["parsed_ok"] = bool(
+                    out["summary"] or out["evidence"] or out["risk"] or out["opportunity"]
+                )
+                return out
+        except json.JSONDecodeError:
+            pass
 
     summ_pat = "|".join(re.escape(s) for s in _SUMMARY)
     summ_re = re.compile(
