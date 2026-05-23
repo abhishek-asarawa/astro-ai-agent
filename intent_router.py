@@ -1,4 +1,5 @@
 import json
+import re
 
 from astro_engine import query_ollama_once
 
@@ -59,6 +60,8 @@ INTENT_KEYWORDS = {
         "family",
         "marriage",
         "spouse",
+        "wife",
+        "husband",
         "relationship",
         "parents",
         "father",
@@ -66,6 +69,13 @@ INTENT_KEYWORDS = {
         "children",
         "home",
         "domestic",
+        "navamsa",
+        "navamamsha",
+        "navamsha",
+        "twelfth lord",
+        "12th lord",
+        "progeny",
+        "offspring",
         # BPHS Ch. 22 / 9th-house wording (fortune, dharma, parent from 9th)
         "9th lord",
         "ninth lord",
@@ -89,6 +99,13 @@ def _rule_scores(question):
             if kw in text:
                 score += 1
         scores[intent] = score
+    # Wife/spouse + 12th-house context → family (overrides wealth "expenses" signal).
+    if ("wife" in text or "spouse" in text) and (
+        "12th lord" in text
+        or "twelfth lord" in text
+        or re.search(r"\b12th\b", text)
+    ):
+        scores["family"] = scores.get("family", 0) + 2
     return scores
 
 
