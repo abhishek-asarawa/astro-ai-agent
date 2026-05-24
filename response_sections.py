@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 
+from text_utils import format_consumer_text
+
 _SUMMARY = (
     "CareerSummary",
     "HealthSummary",
@@ -127,3 +129,43 @@ def parse_structured_answer(text: str | None) -> dict:
         out["summary"] or out["evidence"] or out["risk"] or out["opportunity"] or out["confidence"]
     )
     return out
+
+
+def format_chat_answer_markdown(parsed: dict, raw_fallback: str) -> str:
+    """Build a single chat-friendly markdown answer from structured fields."""
+    if not parsed.get("parsed_ok"):
+        return format_consumer_text(raw_fallback)
+
+    parts: list[str] = []
+    summary = format_consumer_text(parsed.get("summary") or "")
+    if summary:
+        parts.append(f"**In short**\n\n{summary}")
+
+    evidence = format_consumer_text(parsed.get("evidence") or "")
+    if evidence:
+        parts.append(f"**What stands out**\n\n{evidence}")
+
+    risk = format_consumer_text(parsed.get("risk") or "")
+    if risk:
+        parts.append(f"**What to be careful about**\n\n{risk}")
+
+    opportunity = format_consumer_text(parsed.get("opportunity") or "")
+    if opportunity:
+        parts.append(f"**What can help**\n\n{opportunity}")
+
+    ci = parsed.get("confidence_int")
+    if ci is not None and 0 <= ci <= 100:
+        parts.append(
+            "**How confident this reading is**\n\n"
+            f"About **{ci}** out of 100 — this reflects how clear the chart signals are, "
+            "not a guarantee about real life."
+        )
+    elif parsed.get("confidence"):
+        parts.append(
+            "**How confident this reading is**\n\n"
+            + format_consumer_text(str(parsed["confidence"]))
+        )
+
+    if parts:
+        return "\n\n".join(parts)
+    return format_consumer_text(raw_fallback)

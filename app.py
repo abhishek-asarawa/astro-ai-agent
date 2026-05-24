@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import time
+import uuid
+
 import requests
 import streamlit as st
 
@@ -19,9 +22,10 @@ from conversation import ConversationBuffer, make_summarize_fn
 from intent_router import detect_intent
 import rag_config as cfg
 from prompts.schema import domain_response_json_schema
-from response_sections import parse_structured_answer
+from response_sections import format_chat_answer_markdown, parse_structured_answer
 from text_utils import extract_ref_ids, format_consumer_text, strip_reasoning_blocks
 from cities import CITY_COORDINATES, CityResolutionError
+from tracer import trace_feedback, trace_interaction
 
 
 def run_ollama_ui_query_stream(prompt, model_name=None, timeout_s=None):
@@ -93,85 +97,179 @@ def _chunks_to_serializable(retrieved):
     return rows
 
 
-def _render_assistant_in_chat(content: str, *, is_latest: bool):
-    if is_latest:
-        parsed = parse_structured_answer(content)
-        body = ""
-        if parsed.get("parsed_ok") and parsed.get("summary"):
-            body = format_consumer_text(parsed["summary"])
-        if not body:
-            body = format_consumer_text(content or "")[:600]
-        if body.strip():
-            short = body.strip()
-            if len(short) > 380:
-                short = short[:380].rstrip() + "…"
-            st.markdown(short)
-            st.caption("Use **Your reading** below for the full breakdown (key points, cautions, and confidence).")
-        else:
-            st.info("Your reading is ready below — overview, key points, and practical notes.")
+def _display_body_for_message(msg: dict) -> str:
+    if msg.get("displayed_answer"):
+        return msg["displayed_answer"]
+    parsed = parse_structured_answer(msg.get("content") or "")
+    return format_chat_answer_markdown(parsed, msg.get("content") or "")
+
+
+def _render_assistant_in_chat(msg: dict, *, show_feedback: bool):
+    body = _display_body_for_message(msg)
+    if body.strip():
+        st.markdown(body)
     else:
-        preview = format_consumer_text(content or "").strip()
-        if len(preview) > 200:
-            preview = preview[:200].rstrip() + "…"
-        with st.expander("Earlier answer (short excerpt)", expanded=False):
-            st.markdown(preview or "_Empty_")
+        st.info("_No answer text._")
+
+    interaction_id = msg.get("interaction_id")
+    if show_feedback and interaction_id:
+        _render_answer_feedback(interaction_id)
 
 
-def _render_structured_reading(parsed: dict, raw_fallback: str, *, last_question: str | None):
-    show_technical = bool(st.session_state.get("show_technical_details"))
-    st.subheader("Your reading")
-    st.caption(
-        "Plain-language breakdown. Technical codes and citation ids stay hidden unless you turn on "
-        "**Show technical details** in the sidebar."
+def _render_answer_feedback(interaction_id: str):
+    submitted_key = f"feedback_submitted_{interaction_id}"
+    if st.session_state.get(submitted_key):
+        st.caption("Thanks for your feedback.")
+        return
+
+    st.caption("Was this helpful?")
+    col_up, col_down, _ = st.columns([1, 1, 4])
+    with col_up:
+        if st.button("Helpful", key=f"fb_up_{interaction_id}", use_container_width=True):
+            trace_feedback(
+                interaction_id=interaction_id,
+                session_id=st.session_state.session_id,
+                helpful=True,
+            )
+            st.session_state[submitted_key] = True
+            st.rerun()
+    with col_down:
+        if st.button("Not helpful", key=f"fb_down_{interaction_id}", use_container_width=True):
+            trace_feedback(
+                interaction_id=interaction_id,
+                session_id=st.session_state.session_id,
+                helpful=False,
+            )
+            st.session_state[submitted_key] = True
+            st.rerun()
+
+    note_key = f"fb_note_{interaction_id}"
+    note = st.text_input(
+        "Optional note (press Enter after typing, then click again if needed)",
+        key=note_key,
+        placeholder="What was unclear or missing?",
+        label_visibility="collapsed",
     )
-    if last_question:
-        st.markdown(f"**You asked:** {last_question}")
-
-    if parsed.get("parsed_ok"):
-        t_overview, t_points, t_balance, t_conf = st.tabs(
-            ("Overview", "Key points", "Cautions & upside", "Confidence"),
+    if note.strip() and st.button("Send note", key=f"fb_note_btn_{interaction_id}"):
+        trace_feedback(
+            interaction_id=interaction_id,
+            session_id=st.session_state.session_id,
+            helpful=False,
+            note=note.strip(),
         )
-        with t_overview:
-            st.markdown(format_consumer_text(parsed.get("summary")) or "_We could not isolate an overview._")
-        with t_points:
-            st.markdown(format_consumer_text(parsed.get("evidence")) or "_No supporting points were extracted._")
-        with t_balance:
-            st.markdown("**What to watch**")
-            st.markdown(format_consumer_text(parsed.get("risk")) or "—")
-            st.markdown("**What helps**")
-            st.markdown(format_consumer_text(parsed.get("opportunity")) or "—")
-        with t_conf:
-            st.markdown(
-                "This score reflects how decisive the model sounded given your chart data—not a promise "
-                "about real-world outcomes."
-            )
-            ci = parsed.get("confidence_int")
-            if ci is not None and 0 <= ci <= 100:
-                st.progress(ci / 100.0)
-                st.markdown(f"**{ci}** out of 100")
-            elif parsed.get("confidence"):
-                st.markdown(f"**{format_consumer_text(str(parsed['confidence']))}**")
-            else:
-                st.info("No confidence line was found in this answer.")
-    else:
-        st.warning("We could not split this answer into sections automatically. Here is the cleaned text:")
-        st.markdown(format_consumer_text(raw_fallback) or "")
+        st.session_state[submitted_key] = True
+        st.rerun()
 
-    if not show_technical and extract_ref_ids(raw_fallback or ""):
-        with st.expander("How this answer was grounded", expanded=False):
-            st.write(
-                "When retrieval (RAG) is on, the model is steered by short excerpts from classical Vedic "
-                "texts. In the default view we remove internal citation codes so the reading reads naturally."
-            )
 
-    if show_technical:
-        with st.expander("Technical / raw model output", expanded=False):
-            st.code(raw_fallback or "", language="markdown")
+def _render_sources_compact(rows: list[dict]):
+    if not rows:
+        return
+    with st.expander("Sources used", expanded=False):
+        st.caption("Short excerpts from classical texts that informed this answer.")
+        for idx, row in enumerate(rows, start=1):
+            ref_id = row.get("ref_id", f"ref_{idx}")
+            chunk_text = (row.get("text") or "").strip()
+            st.markdown(f"**{idx}. {ref_id}**")
+            st.write(chunk_text[:500] + ("…" if len(chunk_text) > 500 else "") if chunk_text else "_No text._")
+
+
+def _render_technical_practitioner_view(features: dict):
+    """All debug/chart panels — only when sidebar toggle is on."""
+    st.divider()
+    with st.expander("Practitioner / debug view", expanded=False):
+        st.subheader("Run summary")
+        r1c1, r1c2, r1c3 = st.columns(3)
+        r1c1.metric("Model", st.session_state.get("last_model", "—"))
+        r1c2.metric(
+            "Active Mahadasha",
+            features["active_dasha"]["dasha"] if features.get("active_dasha") else "Unknown",
+        )
+        r1c3.metric(
+            "Active Antardasha",
+            features["active_antardasha"]["dasha"]
+            if features.get("active_antardasha")
+            else "Unknown",
+        )
+        r2c1, r2c2, r2c3 = st.columns(3)
+        r2c1.metric(
+            "Next Mahadasha",
+            features["next_dasha"]["dasha"] if features.get("next_dasha") else "Unknown",
+        )
+        r2c2.metric(
+            "Next Antardasha",
+            features["next_antardasha"]["dasha"]
+            if features.get("next_antardasha")
+            else "Unknown",
+        )
+        r2c3.metric("Detected intent", st.session_state.get("last_intent", "general"))
+
+        st.markdown("**Input summary**")
+        st.json(
+            {
+                "birth_date_ist": st.session_state.saved_birth["birth_date"].isoformat(),
+                "birth_time_ist": st.session_state.saved_birth["birth_time"].strftime("%H:%M"),
+                "city_name": st.session_state.saved_birth["city_name"],
+                "last_question": st.session_state.last_question,
+                "rag_enabled": bool(st.session_state.agent_rag_enabled),
+                "agent_loop": bool(st.session_state.agent_loop_enabled),
+            }
+        )
+
+        rows = st.session_state.last_retrieved_rows or []
+        if rows:
+            st.markdown("**Sources (full)**")
+            for idx, row in enumerate(rows, start=1):
+                ref_id = row.get("ref_id", f"ref_{idx}")
+                similarity = row.get("similarity")
+                matched_entities = row.get("matched_entities") or []
+                chunk_text = (row.get("text") or "").strip()
+                header = f"{idx}. {ref_id}"
+                if similarity is not None:
+                    header += f" (sim={similarity:.3f})"
+                with st.expander(header, expanded=False):
+                    if matched_entities:
+                        st.caption("Matched entities: " + ", ".join(str(e) for e in matched_entities))
+                    st.write(chunk_text or "_No chunk text._")
+
+        st.markdown("**Dasha snapshot**")
+        st.write(f"Active Mahadasha: {_format_dasha(features.get('active_dasha'))}")
+        st.write(f"Active Antardasha: {_format_dasha(features.get('active_antardasha'))}")
+        st.write(f"Next Mahadasha: {_format_dasha(features.get('next_dasha'))}")
+        st.write(f"Next Antardasha: {_format_dasha(features.get('next_antardasha'))}")
+
+        st.markdown("**Planetary placements**")
+        st.json(features.get("planets", {}))
+
+        st.markdown("**House lordships and dignities**")
+        st.json(
+            {
+                "house_lordships": features.get("house_lordships", {}),
+                "planetary_dignities": features.get("planetary_dignities", {}),
+            }
+        )
+
+        if st.session_state.last_prompt_preview:
+            st.markdown("**Prompt preview (last linear run)**")
+            prev = st.session_state.last_prompt_preview
+            st.code(prev[:3000], language="text")
+            if len(prev) > 3000:
+                st.caption("Truncated for readability.")
+
+        if st.session_state.chat_history:
+            last_asst = next(
+                (m for m in reversed(st.session_state.chat_history) if m.get("role") == "assistant"),
+                None,
+            )
+            if last_asst and last_asst.get("content"):
+                st.markdown("**Raw model output (last answer)**")
+                st.code(last_asst["content"], language="markdown")
 
 
 def _init_session_defaults():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = uuid.uuid4().hex
     if "is_processing" not in st.session_state:
         st.session_state.is_processing = False
     if "pending_request" not in st.session_state:
@@ -192,6 +290,10 @@ def _init_session_defaults():
         st.session_state.last_prompt_preview = ""
     if "last_question" not in st.session_state:
         st.session_state.last_question = ""
+    if "last_model" not in st.session_state:
+        st.session_state.last_model = ""
+    if "last_intent" not in st.session_state:
+        st.session_state.last_intent = "general"
     if "agent_rag_enabled" not in st.session_state:
         st.session_state.agent_rag_enabled = True
     if "agent_loop_enabled" not in st.session_state:
@@ -234,7 +336,12 @@ def _render_sidebar():
     st.sidebar.checkbox(
         "Show technical details",
         key="show_technical_details",
-        help="Shows raw model formatting and [ref:…] citation ids. Leave off for a client-friendly view.",
+        help="Chart data, sources, prompt preview, and raw model output.",
+    )
+    st.sidebar.divider()
+    st.sidebar.caption(
+        "Interaction logging is opt-in: set `ASTRO_TRACE_ENABLED=1` to record Q&A in "
+        "`interactions.jsonl` for evaluation."
     )
     st.sidebar.divider()
     if st.sidebar.button("Reset conversation", help="Clears chat, memory buffer, and last chart snapshot in the UI."):
@@ -244,6 +351,7 @@ def _render_sidebar():
         st.session_state.last_retrieved_rows = []
         st.session_state.last_prompt_preview = ""
         st.session_state.last_question = ""
+        st.session_state.session_id = uuid.uuid4().hex
         st.rerun()
 
 
@@ -253,7 +361,7 @@ def main():
     _render_sidebar()
 
     st.title("Astro AI Agent")
-    st.caption("Interactive Vedic astrology analysis powered by your local Ollama model.")
+    st.caption("Ask about your chart in plain language — powered by your local Ollama model.")
 
     sb = st.session_state.saved_birth
     quick_picks = _city_quick_picks()
@@ -294,6 +402,7 @@ def main():
         agent_loop_enabled = bool(request_data.get("agent_loop_enabled", False))
         model_input = request_data["model_input"]
         timeout_input = request_data["timeout_input"]
+        request_started = time.perf_counter()
 
         model_override = model_input.strip() or None
         resolved_model, resolved_timeout, resolved_num_ctx = resolve_ollama_config(
@@ -380,7 +489,6 @@ def main():
                 if agent_loop_enabled and agent_result is not None:
                     final_answer = agent_result.get("answer", "") or ""
                 elif cfg.STRUCTURED_OUTPUT_ENABLED:
-                    # Structured output requires non-streaming; enforce JSON schema via Ollama format=.
                     with st.spinner("Generating structured response..."):
                         raw = query_ollama_once(
                             prompt,
@@ -407,7 +515,13 @@ def main():
                                 error_code = possible_error
                                 break
                             final_answer += text_chunk
-                            stream_ph.markdown(strip_reasoning_blocks(final_answer) + "▌")
+                            parsed_preview = parse_structured_answer(
+                                strip_reasoning_blocks(final_answer)
+                            )
+                            preview_md = format_chat_answer_markdown(
+                                parsed_preview, strip_reasoning_blocks(final_answer)
+                            )
+                            stream_ph.markdown(preview_md + "▌")
                     final_answer = strip_reasoning_blocks(final_answer)
                     stream_ph.empty()
 
@@ -425,11 +539,30 @@ def main():
                         "No response text was returned by Ollama. Try a smaller model, higher timeout, or restart Ollama."
                     )
                 else:
-                    # Strip hallucinated refs on linear paths (agent loop handles its own stripping).
-                    if not agent_loop_enabled and not cfg.STRUCTURED_OUTPUT_ENABLED and rag_enabled and rag_bundle and rag_bundle.get("allowed_refs"):
-                        final_answer, _ = _strip_unknown_refs(final_answer, rag_bundle.get("allowed_refs"))
+                    if (
+                        not agent_loop_enabled
+                        and not cfg.STRUCTURED_OUTPUT_ENABLED
+                        and rag_enabled
+                        and rag_bundle
+                        and rag_bundle.get("allowed_refs")
+                    ):
+                        final_answer, _ = _strip_unknown_refs(
+                            final_answer, rag_bundle.get("allowed_refs")
+                        )
 
-                    st.session_state.chat_history.append({"role": "assistant", "content": final_answer})
+                    parsed = parse_structured_answer(final_answer)
+                    displayed_answer = format_chat_answer_markdown(parsed, final_answer)
+                    interaction_id = uuid.uuid4().hex
+                    latency_ms = (time.perf_counter() - request_started) * 1000.0
+
+                    st.session_state.chat_history.append(
+                        {
+                            "role": "assistant",
+                            "content": final_answer,
+                            "interaction_id": interaction_id,
+                            "displayed_answer": displayed_answer,
+                        }
+                    )
                     st.session_state.conversation_buffer.add(cleaned_question, final_answer)
                     st.session_state.saved_birth = {
                         "birth_date": birth_date,
@@ -442,132 +575,73 @@ def main():
                     st.session_state.last_retrieved_rows = _chunks_to_serializable(
                         (rag_bundle or {}).get("retrieved", [])
                     )
-                    st.success("Analysis generated successfully.")
+                    st.session_state.last_model = resolved_model
+                    st.session_state.last_intent = intent_info.get("intent", "general")
 
-                    st.divider()
-                    st.subheader("Run summary")
-                    r1c1, r1c2, r1c3 = st.columns(3)
-                    r1c1.metric("Model", resolved_model)
-                    r1c2.metric(
-                        "Active Mahadasha",
-                        features["active_dasha"]["dasha"] if features["active_dasha"] else "Unknown",
+                    ref_ids = extract_ref_ids(final_answer)
+                    trace_interaction(
+                        interaction_id=interaction_id,
+                        session_id=st.session_state.session_id,
+                        question=cleaned_question,
+                        raw_answer=final_answer,
+                        displayed_answer=displayed_answer,
+                        intent=intent_info.get("intent"),
+                        model=resolved_model,
+                        latency_ms=latency_ms,
+                        rag_enabled=rag_enabled,
+                        agent_loop=agent_loop_enabled,
+                        ref_ids=ref_ids,
+                        confidence_int=parsed.get("confidence_int"),
+                        parsed_ok=bool(parsed.get("parsed_ok")),
+                        birth_date_iso=birth_date.isoformat(),
+                        birth_time_iso=birth_time.strftime("%H:%M"),
+                        city_name=city_name,
+                        intent_method=intent_info.get("method"),
                     )
-                    r1c3.metric(
-                        "Active Antardasha",
-                        features["active_antardasha"]["dasha"]
-                        if features.get("active_antardasha")
-                        else "Unknown",
-                    )
-                    r2c1, r2c2, r2c3 = st.columns(3)
-                    r2c1.metric(
-                        "Next Mahadasha",
-                        features["next_dasha"]["dasha"] if features["next_dasha"] else "Unknown",
-                    )
-                    r2c2.metric(
-                        "Next Antardasha",
-                        features["next_antardasha"]["dasha"]
-                        if features.get("next_antardasha")
-                        else "Unknown",
-                    )
-                    r2c3.metric("Detected intent", intent_info.get("intent", "general"))
-
-                    rag_caption = f"RAG: {'ON' if rag_enabled else 'OFF'}"
-                    if rag_enabled and rag_bundle:
-                        rag_caption += f" | Retrieved refs: {len(rag_bundle.get('allowed_refs', []))}"
-                    if agent_loop_enabled and agent_result:
-                        method = agent_result.get("method", "?")
-                        tools_used = agent_result.get("tool_calls_made", [])
-                        rag_caption += (
-                            f" | Agent: {method}"
-                            + (f" | Tools: {', '.join(tools_used)}" if tools_used else "")
-                        )
-                    st.caption(rag_caption)
 
         finally:
             st.session_state.is_processing = False
             st.session_state.pending_request = None
 
-    st.divider()
-    st.subheader("Conversation")
     if not st.session_state.chat_history:
-        st.info("Ask a question using the chat box at the bottom. Birth details stay until you change them.")
+        st.info("Ask a question below. Your birth details stay until you change them.")
     else:
         n = len(st.session_state.chat_history)
+        last_assistant_idx = None
+        for i, msg in enumerate(st.session_state.chat_history):
+            if msg.get("role") == "assistant":
+                last_assistant_idx = i
+
         for i, msg in enumerate(st.session_state.chat_history):
             with st.chat_message(msg["role"]):
                 if msg["role"] == "user":
                     st.markdown(msg["content"])
                 else:
-                    is_latest = i == n - 1
-                    _render_assistant_in_chat(msg["content"], is_latest=is_latest)
+                    show_feedback = i == last_assistant_idx
+                    _render_assistant_in_chat(msg, show_feedback=show_feedback)
 
-        if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "assistant":
-            parsed = parse_structured_answer(st.session_state.chat_history[-1]["content"])
-            _render_structured_reading(
-                parsed,
-                st.session_state.chat_history[-1]["content"],
-                last_question=st.session_state.last_question or None,
-            )
+        if (
+            last_assistant_idx is not None
+            and st.session_state.agent_rag_enabled
+            and st.session_state.last_retrieved_rows
+            and not st.session_state.get("show_technical_details")
+        ):
+            _render_sources_compact(st.session_state.last_retrieved_rows)
+
+        if not st.session_state.get("show_technical_details") and st.session_state.chat_history:
+            last_asst = st.session_state.chat_history[last_assistant_idx] if last_assistant_idx is not None else None
+            raw = (last_asst or {}).get("content") or ""
+            if raw and extract_ref_ids(raw):
+                with st.expander("Why this answer", expanded=False):
+                    st.write(
+                        "This reading used classical Vedic references behind the scenes. "
+                        "Citation codes are hidden in the chat view for readability."
+                    )
 
     features = st.session_state.last_features
-    if features:
-        st.divider()
-        with st.expander("Input summary", expanded=False):
-            st.json(
-                {
-                    "birth_date_ist": st.session_state.saved_birth["birth_date"].isoformat(),
-                    "birth_time_ist": st.session_state.saved_birth["birth_time"].strftime("%H:%M"),
-                    "city_name": st.session_state.saved_birth["city_name"],
-                    "last_question": st.session_state.last_question,
-                    "rag_enabled": bool(st.session_state.agent_rag_enabled),
-                    "agent_loop": bool(st.session_state.agent_loop_enabled),
-                }
-            )
+    if features and st.session_state.get("show_technical_details"):
+        _render_technical_practitioner_view(features)
 
-        rows = st.session_state.last_retrieved_rows or []
-        if st.session_state.agent_rag_enabled:
-            with st.expander("Sources", expanded=False):
-                if not rows:
-                    st.info("No RAG sources for the last linear run (agent-only or RAG off for that run).")
-                else:
-                    for idx, row in enumerate(rows, start=1):
-                        ref_id = row.get("ref_id", f"ref_{idx}")
-                        similarity = row.get("similarity")
-                        matched_entities = row.get("matched_entities") or []
-                        chunk_text = (row.get("text") or "").strip()
-                        header = f"{idx}. {ref_id}"
-                        if similarity is not None:
-                            header += f" (sim={similarity:.3f})"
-                        with st.expander(header, expanded=False):
-                            if matched_entities:
-                                st.caption("Matched entities: " + ", ".join(str(e) for e in matched_entities))
-                            st.write(chunk_text or "_No chunk text._")
-
-        with st.expander("Dasha snapshot", expanded=False):
-            st.write(f"Active Mahadasha: {_format_dasha(features.get('active_dasha'))}")
-            st.write(f"Active Antardasha: {_format_dasha(features.get('active_antardasha'))}")
-            st.write(f"Next Mahadasha: {_format_dasha(features.get('next_dasha'))}")
-            st.write(f"Next Antardasha: {_format_dasha(features.get('next_antardasha'))}")
-
-        with st.expander("Planetary placements", expanded=False):
-            st.json(features.get("planets", {}))
-
-        with st.expander("House lordships and dignities", expanded=False):
-            st.json(
-                {
-                    "house_lordships": features.get("house_lordships", {}),
-                    "planetary_dignities": features.get("planetary_dignities", {}),
-                }
-            )
-
-        if st.session_state.last_prompt_preview:
-            with st.expander("Prompt preview (last linear run)", expanded=False):
-                prev = st.session_state.last_prompt_preview
-                st.code(prev[:3000], language="text")
-                if len(prev) > 3000:
-                    st.caption("Truncated for readability.")
-
-    # Always visible chat composer (feels like real chat).
     user_prompt = st.chat_input("Ask a follow-up question about your chart")
     if user_prompt and not st.session_state.is_processing:
         cleaned_question = user_prompt.strip()

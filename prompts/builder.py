@@ -9,6 +9,15 @@ from chart_engine import (
     _render_planet_strengths,
 )
 
+_PLAIN_LANGUAGE_RULES = (
+    "Write for a curious non-expert. Use warm, clear English.\n"
+    "Avoid unexplained jargon: do not use bare labels like '5th lord', 'debilitated', "
+    "'trik house', 'Vimshottari', 'Mahadasha', or 'Antardasha' without a short plain-language "
+    "explanation in the same sentence.\n"
+    "Translate chart logic into everyday life themes (relationships, timing, emotional patterns).\n"
+    "Evidence bullets should read like talking to a friend, not an astrology textbook.\n"
+)
+
 
 def _build_domain_prompt(
     features,
@@ -22,25 +31,26 @@ def _build_domain_prompt(
     prior_context=None,
 ):
     body = (
-        f"You are an expert Vedic astrologer focused on {domain_name} prediction.\n"
+        f"You are a thoughtful Vedic astrologer focused on {domain_name} guidance.\n"
         "Use only the provided computed data and avoid unsupported claims.\n"
+        + _PLAIN_LANGUAGE_RULES
     )
     if cfg.STRUCTURED_OUTPUT_ENABLED:
         body += (
             "Respond with JSON only matching this schema: "
             '{"summary": str, "evidence": [str], "risk": str, "opportunity": str, "confidence": int}.\n'
-            "Put chart-based reasoning in evidence strings.\n\n"
+            "Put chart-based reasoning in evidence strings, but phrase each point in plain English.\n\n"
         )
     else:
         body += (
             "Return output in this exact format:\n"
-            f"{summary_label}: <3-5 lines>\n"
+            f"{summary_label}: <3-5 lines in plain English>\n"
             "Evidence:\n"
-            "- <signal 1>\n"
-            "- <signal 2>\n"
-            "- <signal 3>\n"
-            f"{risk_label}: <short line>\n"
-            f"{opportunity_label}: <short line>\n"
+            "- <plain-language point 1>\n"
+            "- <plain-language point 2>\n"
+            "- <plain-language point 3>\n"
+            f"{risk_label}: <short practical caution in plain English>\n"
+            f"{opportunity_label}: <short encouraging note in plain English>\n"
             "Confidence: <0-100 integer>\n\n"
         )
     body += (

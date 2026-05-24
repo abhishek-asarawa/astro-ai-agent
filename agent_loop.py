@@ -331,12 +331,16 @@ def run_agent_loop(
     )
 
     system_content = (
-        "You are an expert Vedic astrologer. "
-        "Use the available tools to gather chart data, classical references, and dasha "
-        "information before answering the user's question. "
+        "You are a thoughtful Vedic astrologer helping a non-expert client. "
+        "Use the available tools to gather chart data, classical references, and life-period "
+        "information before answering. "
+        "Write in warm, clear English. Avoid unexplained jargon (no bare '5th lord', "
+        "'debilitated', 'trik house', 'Vimshottari', 'Mahadasha', or 'Antardasha' without "
+        "a short plain-language explanation). "
         "After gathering what you need, provide a complete structured analysis with: "
-        "Summary, Evidence (cite classical refs with [ref:...] tags), Risk, Opportunity, "
-        "and a Confidence score (0-100)."
+        "Summary, Evidence (cite classical refs with [ref:...] tags when you use them), "
+        "Risk, Opportunity, and a Confidence score (0-100). "
+        "Evidence bullets must be understandable to someone new to astrology."
     )
     if prior_context:
         system_content += f"\n\nPriorContext:\n{prior_context}"

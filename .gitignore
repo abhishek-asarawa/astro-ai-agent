@@ -67,6 +67,7 @@ acceptance_quick_7b/
 
 # --- Runtime traces (opt-in, local only) ---
 traces.jsonl
+interactions.jsonl
 
 # --- Misc scratch ---
 Untitled
