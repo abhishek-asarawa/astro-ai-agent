@@ -58,15 +58,8 @@ DEFAULT_ROUTING_CASES = [
     },
 ]
 
+from eval_scoring import score_keyword_coverage
 from eval_template_markers import TEMPLATE_MARKERS, score_template_adherence
-
-
-def score_keyword_coverage(response, expected_keywords):
-    if not response.strip():
-        return 0.0
-    text = response.lower()
-    hits = sum(1 for kw in expected_keywords if kw.lower() in text)
-    return hits / max(1, len(expected_keywords))
 
 
 def run_one(case, model_name, timeout_s, num_ctx):

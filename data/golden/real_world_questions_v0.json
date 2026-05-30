@@ -1,0 +1,282 @@
+[
+  {
+    "case_id": "rw_career_job_change",
+    "source": "https://www.astroyogi.com/blog/top-10-questions-people-ask-astrologers.aspx",
+    "question": "Is it a good time to change my job?",
+    "expected_intent": "career",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 23 (10th house / profession)",
+    "birth": {"year": 1994, "month": 6, "day": 15, "hour": 10, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["10th", "dasha", "saturn", "timing", "transit"]
+  },
+  {
+    "case_id": "rw_career_suited",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "What career am I most suited for?",
+    "expected_intent": "career",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 23 (10th house / profession)",
+    "birth": {"year": 1998, "month": 9, "day": 27, "hour": 13, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["10th", "dasha", "career", "profession", "confidence"]
+  },
+  {
+    "case_id": "rw_career_promotion",
+    "source": "https://www.indianastrology2000.com/astrology-consultations/consspec.php",
+    "question": "Will I get a promotion this year?",
+    "expected_intent": "career",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 23 (10th house / profession)",
+    "birth": {"year": 1992, "month": 1, "day": 11, "hour": 8, "minute": 45, "city_name": "mumbai"},
+    "expected_keywords": ["10th", "dasha", "promotion", "timing", "transit"]
+  },
+  {
+    "case_id": "rw_career_business",
+    "source": "https://www.anytimeastro.com/blog/astrology/types-of-questions-you-can-ask-in-a-free-astrology-chat-session/",
+    "question": "Should I start my own business?",
+    "expected_intent": "career",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 23 (10th house / profession)",
+    "birth": {"year": 1979, "month": 6, "day": 15, "hour": 10, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["10th", "business", "dasha", "risk", "opportunity"]
+  },
+  {
+    "case_id": "rw_family_marriage_when",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "When will I get married?",
+    "expected_intent": "family",
+    "tags": ["marriage"],
+    "bphs_chapter_hint": "Ch 20 (7th house / marriage)",
+    "birth": {"year": 1995, "month": 4, "day": 20, "hour": 11, "minute": 30, "city_name": "delhi"},
+    "expected_keywords": ["7th", "venus", "jupiter", "dasha", "timing"]
+  },
+  {
+    "case_id": "rw_family_partner_compatible",
+    "source": "https://www.astroyogi.com/blog/top-10-questions-people-ask-astrologers.aspx",
+    "question": "Is my current partner compatible with me?",
+    "expected_intent": "family",
+    "tags": ["marriage"],
+    "bphs_chapter_hint": "Ch 20 (7th house / marriage)",
+    "birth": {"year": 1993, "month": 8, "day": 5, "hour": 18, "minute": 15, "city_name": "bengaluru"},
+    "expected_keywords": ["7th", "venus", "compatibility", "dasha", "relationship"]
+  },
+  {
+    "case_id": "rw_family_marriage_delayed",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "Why is my marriage getting delayed?",
+    "expected_intent": "family",
+    "tags": ["marriage"],
+    "bphs_chapter_hint": "Ch 20 (7th house / marriage)",
+    "birth": {"year": 1990, "month": 11, "day": 12, "hour": 7, "minute": 45, "city_name": "chennai"},
+    "expected_keywords": ["7th", "venus", "delay", "dasha", "timing"]
+  },
+  {
+    "case_id": "rw_family_parents",
+    "source": "https://blog.shloka.life/how-to-prepare-questions-before-an-astrology-consultation/",
+    "question": "How are my relations with my parents?",
+    "expected_intent": "family",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 17 (4th house / mother) and Ch 22 (9th / father)",
+    "birth": {"year": 1991, "month": 7, "day": 5, "hour": 6, "minute": 20, "city_name": "chennai"},
+    "expected_keywords": ["4th", "9th", "parents", "dasha", "family"]
+  },
+  {
+    "case_id": "rw_family_siblings",
+    "source": "https://blog.shloka.life/how-to-prepare-questions-before-an-astrology-consultation/",
+    "question": "How is the bond with my siblings?",
+    "expected_intent": "family",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 16 (3rd house / siblings)",
+    "birth": {"year": 1996, "month": 3, "day": 22, "hour": 14, "minute": 0, "city_name": "mumbai"},
+    "expected_keywords": ["3rd", "sibling", "dasha", "family", "bond"]
+  },
+  {
+    "case_id": "rw_family_home",
+    "source": "https://www.indianastrology2000.com/astrology-consultations/consspec.php",
+    "question": "How is my home life looking?",
+    "expected_intent": "family",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 17 (4th house / home)",
+    "birth": {"year": 1988, "month": 12, "day": 1, "hour": 20, "minute": 30, "city_name": "delhi"},
+    "expected_keywords": ["4th", "home", "moon", "dasha", "family"]
+  },
+  {
+    "case_id": "rw_health_concerns",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "Are there any health concerns in my chart?",
+    "expected_intent": "health",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 19 (6th house / disease)",
+    "birth": {"year": 1994, "month": 2, "day": 17, "hour": 12, "minute": 30, "city_name": "bengaluru"},
+    "expected_keywords": ["6th", "health", "dasha", "risk", "recovery"]
+  },
+  {
+    "case_id": "rw_health_recovery",
+    "source": "https://www.indianastrology2000.com/astrology-consultations/consspec.php",
+    "question": "When will I recover from my illness?",
+    "expected_intent": "health",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 19 (6th house / disease)",
+    "birth": {"year": 1985, "month": 5, "day": 9, "hour": 9, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["6th", "health", "recovery", "dasha", "timing"]
+  },
+  {
+    "case_id": "rw_health_stress",
+    "source": "https://www.anytimeastro.com/blog/astrology/types-of-questions-you-can-ask-in-a-free-astrology-chat-session/",
+    "question": "Am I prone to stress or anxiety?",
+    "expected_intent": "health",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 19 (6th house / disease)",
+    "birth": {"year": 1997, "month": 10, "day": 3, "hour": 16, "minute": 45, "city_name": "mumbai"},
+    "expected_keywords": ["6th", "health", "moon", "risk", "dasha"]
+  },
+  {
+    "case_id": "rw_health_risks",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "What health risks should I watch out for?",
+    "expected_intent": "health",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 19 (6th house / disease)",
+    "birth": {"year": 1996, "month": 12, "day": 26, "hour": 19, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["6th", "health", "risk", "dasha", "recovery"]
+  },
+  {
+    "case_id": "rw_wealth_improve",
+    "source": "https://www.astroyogi.com/blog/top-10-questions-people-ask-astrologers.aspx",
+    "question": "When will my financial situation improve?",
+    "expected_intent": "wealth",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 15 (2nd house) and Ch 24 (11th house / gains)",
+    "birth": {"year": 1996, "month": 12, "day": 26, "hour": 19, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["2nd", "11th", "wealth", "dasha", "gains"]
+  },
+  {
+    "case_id": "rw_wealth_property",
+    "source": "https://www.indianastrology2000.com/astrology-consultations/consspec.php",
+    "question": "Should I invest in property now?",
+    "expected_intent": "wealth",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 15 (2nd house / wealth) and Ch 17 (4th / property)",
+    "birth": {"year": 1992, "month": 1, "day": 11, "hour": 8, "minute": 45, "city_name": "mumbai"},
+    "expected_keywords": ["2nd", "property", "wealth", "dasha", "timing"]
+  },
+  {
+    "case_id": "rw_wealth_loans",
+    "source": "https://www.indianastrology2000.com/astrology-consultations/consspec.php",
+    "question": "Will I be able to repay my loans?",
+    "expected_intent": "wealth",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 15 (2nd house / wealth)",
+    "birth": {"year": 1987, "month": 4, "day": 14, "hour": 11, "minute": 0, "city_name": "bengaluru"},
+    "expected_keywords": ["2nd", "wealth", "loan", "dasha", "gains"]
+  },
+  {
+    "case_id": "rw_education_field",
+    "source": "https://www.astrologerumesh.com/our-services/yearly-reports/2026-ask-1-question/",
+    "question": "Which field of study suits me best?",
+    "expected_intent": "career",
+    "tags": ["education"],
+    "bphs_chapter_hint": "Ch 18 (5th house / intelligence)",
+    "birth": {"year": 2001, "month": 2, "day": 8, "hour": 8, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["5th", "mercury", "jupiter", "study", "dasha"]
+  },
+  {
+    "case_id": "rw_education_admission",
+    "source": "https://blog.shloka.life/how-to-prepare-questions-before-an-astrology-consultation/",
+    "question": "Will I get admission into my preferred college?",
+    "expected_intent": "career",
+    "tags": ["education"],
+    "bphs_chapter_hint": "Ch 18 (5th house / intelligence)",
+    "birth": {"year": 2002, "month": 7, "day": 19, "hour": 15, "minute": 30, "city_name": "mumbai"},
+    "expected_keywords": ["5th", "mercury", "education", "dasha", "timing"]
+  },
+  {
+    "case_id": "rw_education_higher",
+    "source": "https://www.astrologerumesh.com/our-services/yearly-reports/2026-ask-1-question/",
+    "question": "When will I complete my higher studies?",
+    "expected_intent": "career",
+    "tags": ["education"],
+    "bphs_chapter_hint": "Ch 18 (5th house) and Ch 9 (higher learning via 9th)",
+    "birth": {"year": 1999, "month": 11, "day": 25, "hour": 10, "minute": 15, "city_name": "chennai"},
+    "expected_keywords": ["5th", "9th", "studies", "dasha", "timing"]
+  },
+  {
+    "case_id": "rw_general_life_changes",
+    "source": "https://blog.shloka.life/how-to-prepare-questions-before-an-astrology-consultation/",
+    "question": "What major life changes are coming up for me?",
+    "expected_intent": "general",
+    "tags": [],
+    "bphs_chapter_hint": "Cross-house dasha / transit overview",
+    "birth": {"year": 1991, "month": 7, "day": 5, "hour": 6, "minute": 20, "city_name": "chennai"},
+    "expected_keywords": ["dasha", "transit", "overall", "timing", "opportunity"]
+  },
+  {
+    "case_id": "rw_general_favorable",
+    "source": "https://blog.shloka.life/how-to-prepare-questions-before-an-astrology-consultation/",
+    "question": "Which period is most favorable for me right now?",
+    "expected_intent": "general",
+    "tags": [],
+    "bphs_chapter_hint": "Dasha / transit timing overview",
+    "birth": {"year": 1989, "month": 9, "day": 30, "hour": 12, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["dasha", "transit", "favorable", "timing", "overall"]
+  },
+  {
+    "case_id": "rw_career_settle_abroad",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "Will I settle abroad permanently?",
+    "expected_intent": "career",
+    "tags": ["india_trending", "foreign"],
+    "bphs_chapter_hint": "Ch 25 (12th house / foreign lands)",
+    "birth": {"year": 1993, "month": 1, "day": 18, "hour": 6, "minute": 30, "city_name": "delhi"},
+    "expected_keywords": ["12th", "abroad", "rahu", "transit", "dasha"]
+  },
+  {
+    "case_id": "rw_family_children_when",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "When will I have children?",
+    "expected_intent": "family",
+    "tags": ["india_trending", "childbirth"],
+    "bphs_chapter_hint": "Ch 18 (5th house / Putra Bhava)",
+    "birth": {"year": 1995, "month": 4, "day": 20, "hour": 11, "minute": 30, "city_name": "delhi"},
+    "expected_keywords": ["5th", "jupiter", "putra", "dasha", "timing"]
+  },
+  {
+    "case_id": "rw_family_son_daughter",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "Will I have a son or daughter?",
+    "expected_intent": "family",
+    "tags": ["india_trending", "childbirth"],
+    "bphs_chapter_hint": "Ch 18 (5th house / progeny)",
+    "birth": {"year": 1986, "month": 6, "day": 2, "hour": 19, "minute": 0, "city_name": "mumbai"},
+    "expected_keywords": ["5th", "putra", "son", "daughter", "dasha"]
+  },
+  {
+    "case_id": "rw_family_spouse_type",
+    "source": "https://www.astroyogi.com/blog/top-10-questions-people-ask-astrologers.aspx",
+    "question": "What kind of spouse will I have?",
+    "expected_intent": "family",
+    "tags": ["india_trending", "marriage"],
+    "bphs_chapter_hint": "Ch 20 (7th house / spouse)",
+    "birth": {"year": 1994, "month": 10, "day": 11, "hour": 22, "minute": 15, "city_name": "bengaluru"},
+    "expected_keywords": ["7th", "venus", "spouse", "dasha", "marriage"]
+  },
+  {
+    "case_id": "rw_family_father_longevity",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "Will my father live long?",
+    "expected_intent": "family",
+    "tags": ["india_trending", "family_longevity"],
+    "bphs_chapter_hint": "Ch 22 (9th house / father)",
+    "birth": {"year": 1990, "month": 3, "day": 7, "hour": 5, "minute": 45, "city_name": "chennai"},
+    "expected_keywords": ["9th", "father", "longevity", "dasha", "fortune"]
+  },
+  {
+    "case_id": "rw_wealth_inheritance",
+    "source": "https://panditjionway.com/questions-to-ask-an-astrologer/",
+    "question": "Will I inherit ancestral property?",
+    "expected_intent": "wealth",
+    "tags": ["india_trending", "inheritance"],
+    "bphs_chapter_hint": "Ch 22 (9th / fortune) and Ch 15 (2nd / wealth)",
+    "birth": {"year": 1984, "month": 8, "day": 23, "hour": 14, "minute": 0, "city_name": "delhi"},
+    "expected_keywords": ["9th", "2nd", "inheritance", "ancestral", "property"]
+  }
+]

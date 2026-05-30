@@ -12,6 +12,7 @@ INTENT_KEYWORDS = {
     "career": [
         "career",
         "job",
+        "change job",
         "profession",
         "work",
         "promotion",
@@ -31,6 +32,19 @@ INTENT_KEYWORDS = {
         "occupation",
         "business",
         "vocation",
+        "foreign settlement",
+        "settle abroad",
+        "visa",
+        "migration",
+        "abroad",
+        "competitive exam",
+        "higher studies",
+        "study",
+        "studies",
+        "college",
+        "admission",
+        "education",
+        "field of study",
     ],
     "health": [
         "health",
@@ -54,11 +68,29 @@ INTENT_KEYWORDS = {
         "afflicted",
     ],
     "wealth": [
-        "wealth", "money", "finance", "income", "salary", "investment", "savings", "property",
+        "wealth",
+        "money",
+        "finance",
+        "financial",
+        "income",
+        "salary",
+        "investment",
+        "savings",
+        "property",
+        "ancestral property",
+        "inheritance",
+        "multiple income",
+        "gains",
+        "prosperity",
+        "loan",
+        "loans",
+        "debt",
+        "repay",
     ],
     "family": [
         "family",
         "marriage",
+        "married",
         "spouse",
         "wife",
         "husband",
@@ -67,8 +99,14 @@ INTENT_KEYWORDS = {
         "father",
         "mother",
         "children",
+        "child",
+        "son",
+        "daughter",
+        "sibling",
+        "siblings",
         "home",
         "domestic",
+        "home life",
         "navamsa",
         "navamamsha",
         "navamsha",
@@ -85,7 +123,19 @@ INTENT_KEYWORDS = {
         "pilgrimage",
     ],
     "general": [
-        "overall", "general", "life", "future", "outlook", "summary", "holistic",
+        "overall",
+        "general",
+        "life",
+        "future",
+        "outlook",
+        "summary",
+        "holistic",
+        "life purpose",
+        "dharma",
+        "fortune",
+        "karma",
+        "major life",
+        "favorable period",
     ],
 }
 
@@ -106,6 +156,45 @@ def _rule_scores(question):
         or re.search(r"\b12th\b", text)
     ):
         scores["family"] = scores.get("family", 0) + 2
+    # Parent longevity / relations questions → family over health "long life" overlap.
+    if "father" in text or "mother" in text or "parents" in text:
+        scores["family"] = scores.get("family", 0) + 1
+    # Colloquial real-world phrasing (single-keyword questions that should not need LLM).
+    if "get married" in text or re.search(r"\bmarried\b", text):
+        scores["family"] = scores.get("family", 0) + 2
+    if "spouse" in text:
+        scores["family"] = scores.get("family", 0) + 2
+    if "change" in text and "job" in text:
+        scores["career"] = scores.get("career", 0) + 2
+    if "health" in text and ("concern" in text or "concerns" in text):
+        scores["health"] = scores.get("health", 0) + 2
+    if "financial" in text:
+        scores["wealth"] = scores.get("wealth", 0) + 2
+    if "settle abroad" in text or ("abroad" in text and "settle" in text):
+        scores["career"] = scores.get("career", 0) + 2
+    if "ancestral property" in text or "inherit" in text:
+        scores["wealth"] = scores.get("wealth", 0) + 2
+    # Business / entrepreneurship → career (avoids LLM misclassifying as general).
+    if "business" in text or "own business" in text:
+        scores["career"] = scores.get("career", 0) + 2
+    if "promotion" in text:
+        scores["career"] = scores.get("career", 0) + 2
+    if "career" in text and "suit" in text:
+        scores["career"] = scores.get("career", 0) + 2
+    if "partner" in text and "compatible" in text:
+        scores["family"] = scores.get("family", 0) + 2
+    if "marriage" in text and "delay" in text:
+        scores["family"] = scores.get("family", 0) + 2
+    if "recover" in text or "illness" in text:
+        scores["health"] = scores.get("health", 0) + 2
+    if "stress" in text or "anxiety" in text:
+        scores["health"] = scores.get("health", 0) + 2
+    if "health" in text and "risk" in text:
+        scores["health"] = scores.get("health", 0) + 2
+    if "invest" in text and "property" in text:
+        scores["wealth"] = scores.get("wealth", 0) + 2
+    if "favorable" in text and "period" in text:
+        scores["general"] = scores.get("general", 0) + 2
     return scores
 
 

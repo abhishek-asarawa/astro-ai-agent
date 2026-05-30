@@ -16,6 +16,7 @@ from astro_engine import (
     resolve_ollama_config,
 )
 from eval_grounding import run_grounding_judge, score_grounding_embedding
+from eval_scoring import score_keyword_coverage
 from eval_template_markers import score_template_adherence
 
 
@@ -119,14 +120,6 @@ def build_baseline_prompt(case):
         "You are an expert Vedic Astrologer. Provide a career prediction for the native.\n\n"
         f"DATA:\n{facts}\n\nQUESTION: {case['question']}"
     )
-
-
-def score_keyword_coverage(response, expected_keywords):
-    if not response.strip():
-        return 0.0
-    text = response.lower()
-    hits = sum(1 for kw in expected_keywords if kw.lower() in text)
-    return hits / max(1, len(expected_keywords))
 
 
 def run_once(

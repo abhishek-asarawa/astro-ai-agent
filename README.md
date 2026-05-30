@@ -121,6 +121,11 @@ History is global (all eval types/models compared together).
 
 - `astro_engine.py`: chart feature builder and Ollama query runtime
 - `evaluate_career.py`: evaluator, scoring, retention, and history logic
+- `evaluate_real_world_questions.py`: colloquial real-world question benchmark (intent + response quality)
+- `eval_scoring.py`: shared keyword-coverage scoring for evaluators
+- `data/golden/real_world_questions_v0.json`: 28 BPHS-scoped real-world golden cases
+- `data/golden/schema.py`: `GoldenCase` validation for golden JSON files
+- `FUTURE_IMPROVEMENTS.md`: deferred corpus expansion, intent split, and backlog
 - `eval_history.json`: accepted history index (created after accepted runs)
 - `eval_records/`: accepted report snapshots (created after accepted runs)
 - `career_eval_report.json`: latest run output file (default)
@@ -200,6 +205,33 @@ python evaluate_intent_routing.py \
   --timeout 120 \
   --workers 2 \
   --output intent_routing_eval_report.json
+```
+
+### Run real-world questions evaluation
+
+Colloquial first-person questions scoped to what **BPHS Vol.1** can ground (see [FUTURE_IMPROVEMENTS.md](FUTURE_IMPROVEMENTS.md) for deferred dosha/remedy/matching categories).
+
+```bash
+python evaluate_real_world_questions.py \
+  --model qwen2.5:7b-instruct \
+  --timeout 120 \
+  --workers 2
+```
+
+Report is written to `eval_records/real_world_eval_<timestamp>.json`. Key metrics:
+
+- `intent_accuracy` — overall routing correctness vs golden labels
+- `intent_accuracy_per_domain` — career / health / wealth / family / general breakdown
+- `intent_accuracy_per_tag` — e.g. `marriage`, `education`, `india_trending` (Phase 2 gating signal)
+- `intent_accuracy_india_trending` vs `intent_accuracy_generic`
+- `keyword_avg`, `template_avg`, `fallback_rate`
+
+Golden cases: [data/golden/real_world_questions_v0.json](data/golden/real_world_questions_v0.json) (28 cases).
+
+Fast routing-only unit tests (no Ollama):
+
+```bash
+python -m pytest tests/test_intent_routing_real_world.py -q
 ```
 
 ### Stable benchmark run (recommended)
