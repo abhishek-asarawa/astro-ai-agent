@@ -82,9 +82,11 @@ DEFAULT_CASES = [
     },
 ]
 
+from evals.paths import CAREER_REPORT, EVAL_HISTORY, RECORDS_DIR
+
 DEFAULT_EVAL_TYPE = "career"
-DEFAULT_HISTORY_PATH = "eval_history.json"
-DEFAULT_RECORDS_DIR = "eval_records"
+DEFAULT_HISTORY_PATH = EVAL_HISTORY
+DEFAULT_RECORDS_DIR = RECORDS_DIR
 MAX_HISTORY_RECORDS = 3
 
 
@@ -507,7 +509,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate baseline vs enriched prompts with smart retention.")
     parser.add_argument("--eval-type", type=str, default=DEFAULT_EVAL_TYPE)
     parser.add_argument("--runs", type=int, default=2)
-    parser.add_argument("--output", type=str, default="career_eval_report.json")
+    parser.add_argument("--output", type=str, default=CAREER_REPORT)
     parser.add_argument("--history", type=str, default=DEFAULT_HISTORY_PATH)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--model", type=str, default=None)

@@ -15,8 +15,10 @@ from data.golden.schema import GoldenCase, load_golden_cases
 from evals.eval_scoring import score_keyword_coverage
 from evals.eval_template_markers import score_template_adherence
 
+from evals.paths import RECORDS_DIR
+
 DEFAULT_GOLDEN_PATH = "data/golden/real_world_questions_v0.json"
-DEFAULT_RECORDS_DIR = "eval_records"
+DEFAULT_RECORDS_DIR = RECORDS_DIR
 
 
 def run_one(case: GoldenCase, model_name, timeout_s, num_ctx):
@@ -147,7 +149,7 @@ def parse_args():
         "--output",
         type=str,
         default="",
-        help="Output JSON report path. Defaults to eval_records/real_world_eval_<timestamp>.json",
+        help="Output JSON report path. Defaults to eval_reports/records/real_world_eval_<timestamp>.json",
     )
     parser.add_argument(
         "--timeout",

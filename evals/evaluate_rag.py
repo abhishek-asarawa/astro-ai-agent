@@ -51,10 +51,12 @@ from astro_agent.rag.search import search_for_eval
 from evals.eval_grounding import run_grounding_judge, score_grounding_embedding
 
 
+from evals.paths import RAG_HISTORY, RAG_RECORDS_DIR, RAG_REPORT
+
 DEFAULT_GOLDEN_PATH = "data/golden/rag_eval_v0.json"
-DEFAULT_REPORT_PATH = "rag_eval_report.json"
-DEFAULT_HISTORY_PATH = "rag_eval_history.json"
-DEFAULT_RECORDS_DIR = "rag_eval_records"
+DEFAULT_REPORT_PATH = RAG_REPORT
+DEFAULT_HISTORY_PATH = RAG_HISTORY
+DEFAULT_RECORDS_DIR = RAG_RECORDS_DIR
 EVAL_TYPE = "rag_v0"
 MAX_HISTORY_RECORDS = 3
 # Stored JSON only; full answer is still sent to the judge.

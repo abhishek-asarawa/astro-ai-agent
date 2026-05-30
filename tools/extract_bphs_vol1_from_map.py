@@ -4,8 +4,10 @@
 Skips chapters 13–25 by default (existing hand-tuned filenames in data/corpus/bphs_sharma).
 
 Example:
-  python tools/extract_bphs_vol1_from_map.py \\
-    --pdf \"Brihat Parasara Hora Sastra with English Translation Girish Chand Sharma Volume 1.pdf\"
+  python tools/extract_bphs_vol1_from_map.py
+
+  # Override PDF path if needed:
+  python tools/extract_bphs_vol1_from_map.py --pdf books/Brihat\\ Parasara\\ Hora\\ Sastra\\ with\\ English\\ Translation\\ Girish\\ Chand\\ Sharma\\ Volume\\ 1.pdf
 """
 
 from __future__ import annotations
@@ -21,13 +23,14 @@ _TOOLS_DIR = Path(__file__).resolve().parent
 if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 from ocr_bphs_chapter_range import ocr_page  # noqa: E402
+from book_paths import BPHS_SHARMA_VOL1_PDF  # noqa: E402
 
 DEFAULT_SKIP = tuple(range(13, 26))  # existing corpus files
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pdf", type=Path, required=True)
+    ap.add_argument("--pdf", type=Path, default=BPHS_SHARMA_VOL1_PDF)
     ap.add_argument(
         "--map-json",
         type=Path,

@@ -17,10 +17,16 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import fitz
+
+_TOOLS_DIR = Path(__file__).resolve().parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+from book_paths import BPHS_SHARMA_VOL1_PDF  # noqa: E402
 
 # Tesseract often reads "Chapter -7" / "Chapter-9" for some titles.
 HEAD_RE = re.compile(r"(?i)(?:Chapter|CHAPTER)\s*-?\s*(\d+)\b")
@@ -50,7 +56,7 @@ def ocr_page(doc: fitz.Document, page_1based: int, dpi: int, psm: str) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pdf", type=Path, required=True)
+    ap.add_argument("--pdf", type=Path, default=BPHS_SHARMA_VOL1_PDF)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--dpi", type=int, default=96)
     ap.add_argument("--psm", default="1")

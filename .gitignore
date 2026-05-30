@@ -39,9 +39,6 @@ chroma_db/
 
 # --- Corpus: local OCR / chapter text (regenerate; do not commit) ---
 data/corpus/bphs_sharma/**/*.txt
-# --- Eval / acceptance run history (regenerable) ---
-eval_history.json
-rag_eval_history.json
 data/corpus/**/*.png
 data/corpus/**/*.jpg
 data/corpus/**/*.jpeg
@@ -49,18 +46,15 @@ data/corpus/**/*.webp
 data/corpus/**/*.pdf
 ocr_work/
 
-# --- Eval & acceptance outputs (regenerable) ---
-rag_eval_report.json
-rag_eval_report_*.json
-career_eval_report.json
-intent_routing_eval_report.json
-intent_eval_report.json
-rag_eval_records/
-eval_records/
+# --- Eval / acceptance outputs (regenerable) ---
+eval_reports/
 acceptance_logs/
 acceptance_ab_8b/
 acceptance_quick_7b/
 *.log
+
+# --- Reference books (local PDFs; do not commit) ---
+books/
 
 # --- Large / binary reference material (keep local) ---
 *.pdf

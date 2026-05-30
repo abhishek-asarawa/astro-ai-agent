@@ -234,6 +234,6 @@ gantt
 
 - Always run `evaluate_rag.py` after touching `rag_search.py` or `rag_config.py`. The golden eval is at `data/golden/rag_eval_v0.json` (25 cases). Current accepted baseline: `1.00 / 1.00 / +0.50`.
 - `rag_eval_history.json`, `eval_history.json`, and the `*_eval_records/` directories are gitignored — regenerate locally.
-- The BPHS corpus `.txt` files under `data/corpus/` are gitignored. Reproduce from `Brihat Parasara Hora Sastra with English Translation Girish Chand Sharma Volume 1.pdf` using `tools/extract_bphs_vol1_from_map.py` + `scripts/ingest_bphs_from_full_pdf_dir.py`.
+- The BPHS corpus `.txt` files under `data/corpus/` are gitignored. Reproduce from `books/Brihat Parasara Hora Sastra with English Translation Girish Chand Sharma Volume 1.pdf` using `tools/extract_bphs_vol1_from_map.py` + `scripts/ingest_bphs_from_full_pdf_dir.py`.
 - Context window default is 16384 (`astro_engine.py` line 20). With RAG refs injected, prompts are typically 2000-4000 tokens. Do not raise `num_ctx` above 16384 on M1 Pro 16GB with a 7B model without measuring swap.
 - See `RAG_PLAN.md` for the detailed retrieval decisions log (do not re-litigate without strong reason).

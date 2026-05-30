@@ -4,6 +4,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from statistics import mean
 
+from evals.paths import INTENT_ROUTING_REPORT
+
 from astro_agent.chart.engine import build_chart_features
 from astro_agent.llm.prompts.builder import build_prompt_for_intent
 from astro_agent.llm.client import query_ollama_once, resolve_ollama_config
@@ -149,7 +151,7 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=str,
-        default="intent_routing_eval_report.json",
+        default=INTENT_ROUTING_REPORT,
         help="Output JSON report file path.",
     )
     parser.add_argument(

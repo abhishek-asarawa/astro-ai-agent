@@ -23,6 +23,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from evals.paths import CAREER_REPORT, EVAL_HISTORY, RAG_HISTORY, RAG_REPORT
 from typing import List
 
 
@@ -176,7 +178,7 @@ def check_evaluate_career_rag(
     poll_interval_s: int,
 ) -> CheckResult:
     log_path = logs_dir / "03_evaluate_career_rag.log"
-    output_path = repo / "career_eval_report.json"
+    output_path = repo / CAREER_REPORT
     cmd = [
         "venv/bin/python",
         "evaluate_career.py",
@@ -194,7 +196,7 @@ def check_evaluate_career_rag(
         "--output",
         str(output_path),
         "--history",
-        "eval_history.json",
+        EVAL_HISTORY,
         "--retention-mode",
         "rag",
         "--judge-model",
@@ -243,10 +245,10 @@ def check_evaluate_career_rag(
                 details = "Missing summary fields for acceptance check."
         except Exception as exc:
             passed = False
-            details = f"Could not parse career_eval_report.json: {exc}"
+            details = f"Could not parse {CAREER_REPORT}: {exc}"
     else:
         passed = False
-        details = "career_eval_report.json not found after evaluate_career run."
+        details = f"{CAREER_REPORT} not found after evaluate_career run."
 
     if rc != 0:
         details = f"evaluate_career exited {rc}. {details}"
@@ -260,7 +262,7 @@ def check_evaluate_rag(
     poll_interval_s: int,
 ) -> CheckResult:
     log_path = logs_dir / "04_evaluate_rag.log"
-    output_path = repo / "rag_eval_report.json"
+    output_path = repo / RAG_REPORT
     cmd = [
         "venv/bin/python",
         "evaluate_rag.py",
@@ -269,7 +271,7 @@ def check_evaluate_rag(
         "--output",
         str(output_path),
         "--history",
-        "rag_eval_history.json",
+        RAG_HISTORY,
         "--no-retention",
     ]
     rc, output, elapsed = _run_command("Check 4: evaluate_rag", cmd, repo, log_path, poll_interval_s)
@@ -288,7 +290,7 @@ def check_evaluate_rag(
             details = f"gold@3={gold}, silver@5={silver}, delta={delta}"
         except Exception as exc:
             passed = False
-            details = f"Could not parse rag_eval_report.json: {exc}"
+            details = f"Could not parse {RAG_REPORT}: {exc}"
     return CheckResult("evaluate_rag_regression", passed, details, str(log_path), elapsed)
 
 

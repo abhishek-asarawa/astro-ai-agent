@@ -303,7 +303,7 @@ print(f'Total: {col.count()}')
 
 **Option A — single chapter from PDF pages**
 
-1. Render PDF pages: `pdftoppm -r 300 -f START -l END "<book.pdf>" ocr_work/ch_NN/p -png`
+1. Render PDF pages: `pdftoppm -r 300 -f START -l END "books/Brihat Parasara Hora Sastra with English Translation Girish Chand Sharma Volume 1.pdf" ocr_work/ch_NN/p -png`
 2. OCR each: `for f in ocr_work/ch_NN/p-*.png; do tesseract "$f" "${f%.png}" -l eng; done`
 3. Concat: `cat ocr_work/ch_NN/p-*.txt > data/corpus/bphs_sharma/ch_NN_<topic>.txt`
 4. Or use **`tools/ocr_bphs_chapter_range.py --pdf … --start START --end END --output …`**
@@ -311,7 +311,7 @@ print(f'Total: {col.count()}')
 **Option B — bulk (Sharma Vol. 1)**
 
 1. Adjust **`tools/bphs_vol1_sharma_chapter_starts.json`** if boundaries shift.
-2. **`python tools/extract_bphs_vol1_from_map.py --pdf "<book.pdf>"`** (writes `ch_N_bphs_vol1.txt`; skips **13–25** by default).
+2. **`python tools/extract_bphs_vol1_from_map.py`** (default PDF: `books/Brihat Parasara Hora Sastra with English Translation Girish Chand Sharma Volume 1.pdf`; writes `ch_N_bphs_vol1.txt`; skips **13–25** by default).
 3. **`python scripts/ingest_bphs_from_full_pdf_dir.py --dir data/corpus/bphs_sharma`** (with Ollama + `nomic-embed-text`).
 
 Then for any path:

@@ -3,6 +3,8 @@ import json
 import os
 from statistics import mean
 
+from evals.paths import INTENT_DETECTION_REPORT
+
 from astro_agent.llm.client import resolve_ollama_config
 from astro_agent.routing.intent_router import detect_intent
 
@@ -61,7 +63,7 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=str,
-        default="intent_detection_eval_report.json",
+        default=INTENT_DETECTION_REPORT,
         help="Output JSON report file path.",
     )
     parser.add_argument(

@@ -5,7 +5,6 @@ Depends: PyMuPDF (fitz), tesseract on PATH, English traineddata.
 
 Example:
   PYTHONPATH=.pip_target python tools/ocr_bphs_chapter_range.py \\
-    --pdf \"Brihat Parasara Hora Sastra with English Translation Girish Chand Sharma Volume 1.pdf\" \\
     --start 202 --end 208 \\
     --output data/corpus/bphs_sharma/ch_14_effects_of_1_house.txt
 
@@ -19,10 +18,16 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import fitz  # PyMuPDF
+
+_TOOLS_DIR = Path(__file__).resolve().parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+from book_paths import BPHS_SHARMA_VOL1_PDF  # noqa: E402
 
 
 def ocr_page(doc: fitz.Document, page_1based: int, dpi: int, psm: str) -> str:
@@ -49,7 +54,7 @@ def ocr_page(doc: fitz.Document, page_1based: int, dpi: int, psm: str) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="OCR a page range from BPHS PDF.")
-    ap.add_argument("--pdf", required=True, type=Path)
+    ap.add_argument("--pdf", type=Path, default=BPHS_SHARMA_VOL1_PDF)
     ap.add_argument("--start", type=int, required=True, help="First page (1-based, inclusive).")
     ap.add_argument("--end", type=int, required=True, help="Last page (1-based, inclusive).")
     ap.add_argument("--output", type=Path, required=True)
