@@ -8,24 +8,23 @@ import uuid
 import requests
 import streamlit as st
 
-from astro_engine import (
+from astro_agent.llm.client import (
     _call_ollama,
-    _strip_unknown_refs,
-    build_rag_enriched_prompt,
-    build_prompt_for_intent,
     build_chart_features,
-    resolve_ollama_config,
     query_ollama_once,
+    resolve_ollama_config,
 )
-from agent_loop import run_agent_loop
-from conversation import ConversationBuffer, make_summarize_fn
-from intent_router import detect_intent
-import rag_config as cfg
-from prompts.schema import domain_response_json_schema
-from response_sections import format_chat_answer_markdown, parse_structured_answer
-from text_utils import extract_ref_ids, format_consumer_text, strip_reasoning_blocks
-from cities import CITY_COORDINATES, CityResolutionError
-from tracer import trace_feedback, trace_interaction
+from astro_agent.rag.inject import _strip_unknown_refs, build_rag_enriched_prompt
+from astro_agent.llm.prompts.builder import build_prompt_for_intent
+from astro_agent.agent.loop import run_agent_loop
+from astro_agent.llm.conversation import ConversationBuffer, make_summarize_fn
+from astro_agent.routing.intent_router import detect_intent
+from astro_agent.rag import config as cfg
+from astro_agent.llm.prompts.schema import domain_response_json_schema
+from astro_agent.utils.response_sections import format_chat_answer_markdown, parse_structured_answer
+from astro_agent.utils.text_utils import extract_ref_ids, format_consumer_text, strip_reasoning_blocks
+from astro_agent.utils.cities import CITY_COORDINATES, CityResolutionError
+from astro_agent.utils.tracer import trace_feedback, trace_interaction
 
 
 def run_ollama_ui_query_stream(prompt, model_name=None, timeout_s=None):

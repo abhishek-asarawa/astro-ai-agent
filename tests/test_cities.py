@@ -2,7 +2,7 @@
 
 import pytest
 
-from cities import CITY_COORDINATES, CityResolutionError, resolve_city_coordinates
+from astro_agent.utils.cities import CITY_COORDINATES, CityResolutionError, resolve_city_coordinates
 
 
 def test_static_city_hit():

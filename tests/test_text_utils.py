@@ -1,4 +1,4 @@
-from text_utils import format_consumer_text, soften_jargon, strip_ref_tags
+from astro_agent.utils.text_utils import format_consumer_text, soften_jargon, strip_ref_tags
 
 
 def test_strip_ref_tags():

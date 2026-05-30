@@ -1,0 +1,18 @@
+# Development and OCR/ingest tools dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Core requirements (must already be installed)
+-r requirements.txt
+
+# OCR and PDF extraction (tools/ directory)
+# PyMuPDF: PDF parsing for BPHS corpus extraction
+PyMuPDF>=1.23,<2
+
+# Note: Tesseract OCR must be installed system-wide:
+#   macOS:   brew install tesseract
+#   Ubuntu:  sudo apt install tesseract-ocr
+# The tools/ scripts call Tesseract via subprocess.
+
+# Linting and type checking (Phase 7 tooling)
+ruff>=0.4,<1
+mypy>=1.10,<2

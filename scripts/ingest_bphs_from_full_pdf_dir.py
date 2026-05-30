@@ -19,8 +19,8 @@ import re
 import sys
 from pathlib import Path
 
-import rag_config as cfg
-from knowledge_builder import get_collection, ingest
+from astro_agent.rag import config as cfg
+from astro_agent.rag.builder import get_collection, ingest
 
 CHAPTER_FROM_NAME = re.compile(r"^ch_(\d+)_", re.IGNORECASE)
 

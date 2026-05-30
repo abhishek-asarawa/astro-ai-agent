@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from dashas import DASHA_SEQUENCE, calculate_antardashas, get_current_and_next_antardasha
+from astro_agent.chart.dashas import DASHA_SEQUENCE, calculate_antardashas, get_current_and_next_antardasha
 
 
 def _parse(d: dict):

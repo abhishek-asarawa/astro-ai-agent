@@ -1,6 +1,6 @@
 import pytest
 
-from intent_router import detect_intent
+from astro_agent.routing.intent_router import detect_intent
 
 
 @pytest.mark.parametrize(

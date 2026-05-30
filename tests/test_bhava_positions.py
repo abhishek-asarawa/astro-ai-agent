@@ -2,7 +2,7 @@
 
 import pytest
 
-from astro_engine import _bhava_house_for_longitude, build_chart_features
+from astro_agent.chart.engine import _bhava_house_for_longitude, build_chart_features
 
 
 def test_bhava_house_simple_interval():

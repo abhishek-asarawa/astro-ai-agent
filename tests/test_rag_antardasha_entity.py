@@ -1,7 +1,7 @@
 """p3c: active Antardasha lord flows into RAG structural text and query entities."""
 
-from astro_engine import _features_to_chart_facts
-from rag_search import _query_entities, _summarize_chart_facts
+from astro_agent.rag.inject import _features_to_chart_facts
+from astro_agent.rag.search import _query_entities, _summarize_chart_facts
 
 
 def test_summarize_chart_facts_includes_antardasha_fragment():

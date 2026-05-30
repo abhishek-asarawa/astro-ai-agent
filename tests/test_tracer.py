@@ -1,7 +1,7 @@
 import json
 import os
 
-from tracer import chart_fingerprint, trace_feedback, trace_interaction, trace_llm_call
+from astro_agent.utils.tracer import chart_fingerprint, trace_feedback, trace_interaction, trace_llm_call
 
 
 def test_trace_disabled_writes_nothing(tmp_path, monkeypatch):

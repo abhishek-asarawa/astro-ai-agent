@@ -1,4 +1,4 @@
-from response_sections import format_chat_answer_markdown, parse_structured_answer
+from astro_agent.utils.response_sections import format_chat_answer_markdown, parse_structured_answer
 
 
 SAMPLE = """OverallSummary: Love may feel delayed in this chapter of life.

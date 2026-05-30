@@ -1,8 +1,8 @@
 """Domain prompt builders."""
 
-from dashas import format_dasha_timeline
-import rag_config as cfg
-from chart_engine import (
+from astro_agent.chart.dashas import format_dasha_timeline
+from astro_agent.rag import config as cfg
+from astro_agent.chart.engine import (
     _render_dasha_section,
     _render_domain_signals,
     _render_functional_lords,

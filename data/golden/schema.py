@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from intent_router import SUPPORTED_INTENTS
+try:
+    from astro_agent.routing.intent_router import SUPPORTED_INTENTS
+except ImportError:
+    from intent_router import SUPPORTED_INTENTS  # backward compat
 
 _BIRTH_FIELDS = ("year", "month", "day", "hour", "minute", "city_name")
 

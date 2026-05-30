@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from prompts.schema import DomainResponseSchema, domain_response_json_schema
+from astro_agent.llm.prompts.schema import DomainResponseSchema, domain_response_json_schema
 
 
 def test_schema_json_serializable():
