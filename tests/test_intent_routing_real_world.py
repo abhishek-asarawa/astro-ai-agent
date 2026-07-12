@@ -40,6 +40,6 @@ def test_golden_file_loads():
     from data.golden.schema import load_golden_cases
 
     cases = load_golden_cases("data/golden/real_world_questions_v0.json")
-    assert len(cases) == 28
+    assert len(cases) == 29
     assert all(c.question for c in cases)
     assert all(c.expected_intent for c in cases)

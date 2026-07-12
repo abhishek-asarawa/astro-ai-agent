@@ -1,6 +1,7 @@
 """Domain prompt builders."""
 
 from astro_agent.chart.dashas import format_dasha_timeline
+from astro_agent.chart.timing import build_timing_report, format_timing_context_block, question_has_time_horizon
 from astro_agent.rag import config as cfg
 from astro_agent.chart.engine import (
     _render_dasha_section,
@@ -17,6 +18,11 @@ _PLAIN_LANGUAGE_RULES = (
     "Translate chart logic into everyday life themes (relationships, timing, emotional patterns).\n"
     "Evidence bullets should read like talking to a friend, not an astrology textbook.\n"
 )
+
+
+def _is_promotion_question(user_question: str) -> bool:
+    q = (user_question or "").lower()
+    return any(term in q for term in ("promotion", "promoted", "salary hike", "raise", "increment"))
 
 
 def _build_domain_prompt(
@@ -64,7 +70,30 @@ def _build_domain_prompt(
         + _render_dasha_section(features)
         + "\n\n"
         + format_dasha_timeline(features["dasha_timeline"])
-        + (f"\n\nPriorContext:\n{prior_context}" if prior_context else "")
+    )
+    if question_has_time_horizon(user_question):
+        timing_report = build_timing_report(features, question_text=user_question)
+        body += "\n\n" + format_timing_context_block(timing_report)
+        body += (
+            "\n\nTimingAnswerRules:\n"
+            "- Because TimingContext is present, the answer MUST include the timing facts, not only general dasha interpretation.\n"
+            "- Make the first Evidence bullet start with 'Timing window:' and include WindowStart, WindowEnd, "
+            "ActiveAntardasha end date, DaysUntilAntardashaEnd, and whether TransitionsInWindow is none or has changes.\n"
+            "- In the summary or evidence, mention the requested window dates and the active Antardasha end date.\n"
+            "- Mention the number of days until the active Antardasha ends.\n"
+            "- State whether there are dasha or Antardasha transitions inside the requested window.\n"
+            "- If NearTerm6Day is present, state whether the coming 6 days show a major dasha change.\n"
+        )
+        if domain_name == "CAREER" and _is_promotion_question(user_question):
+            body += (
+                "\nPromotionAnswerRules:\n"
+                "- Give a direct promotion verdict in the first sentence: likely, moderate/conditional, delayed, or unlikely.\n"
+                "- In Evidence, explicitly connect the verdict to the 10th house/status, 11th house/gains, "
+                "6th house/service-competition, and 2nd house/pay or salary themes using the provided CareerSignals.\n"
+                "- Do not answer only with generic hard-work advice; tie the practical advice to the timing window.\n"
+            )
+    body += (
+        (f"\n\nPriorContext:\n{prior_context}" if prior_context else "")
         + f"\n\nQuestion: {user_question}"
     )
     return body

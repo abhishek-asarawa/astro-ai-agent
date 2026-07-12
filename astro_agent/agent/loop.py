@@ -1,6 +1,6 @@
 """Agentic ReAct loop using Ollama native tool-calling (>= 0.3).
 
-Exposes four tools to the model: build_chart, rag_search, get_dasha, detect_intent.
+Exposes tools to the model: build_chart, rag_search, get_dasha, get_timing_window, detect_intent.
 Runs at most MAX_AGENT_TURNS tool-call rounds before falling back to the current
 linear prompt-and-generate path.
 """
@@ -8,6 +8,7 @@ linear prompt-and-generate path.
 from __future__ import annotations
 
 import json
+import os
 import time
 import requests
 
@@ -19,10 +20,11 @@ from astro_agent.llm.prompts.builder import build_prompt_for_intent
 from astro_agent.llm.client import query_ollama_once, resolve_ollama_config
 from astro_agent.utils.text_utils import extract_ref_ids, strip_reasoning_blocks
 from astro_agent.chart.dashas import format_dasha_timeline
+from astro_agent.chart.timing import build_timing_report
 from astro_agent.routing.intent_router import detect_intent as _detect_intent
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-MAX_AGENT_TURNS = 2
+MAX_AGENT_TURNS = int(os.environ.get("ASTRO_MAX_AGENT_TURNS", "4"))
 
 TOOLS: list[dict] = [
     {
@@ -60,10 +62,42 @@ TOOLS: list[dict] = [
         "function": {
             "name": "get_dasha",
             "description": (
-                "Return the active Mahadasha, active Antardasha, next Mahadasha, next Antardasha, "
-                "and full Vimshottari Mahadasha timeline for the native."
+                "Return the current Mahadasha/Antardasha snapshot and full Vimshottari Mahadasha timeline. "
+                "Use for present-period facts only; for date windows, countdowns, or upcoming changes use get_timing_window."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_timing_window",
+            "description": (
+                "Resolve a timing window (e.g. next 6 months, coming 6 days) and return JSON with active periods, "
+                "days until sub-period ends, dasha transitions inside the window, and a near-term 6-day checkpoint."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "window_text": {
+                        "type": "string",
+                        "description": "Natural-language horizon from the question, e.g. 'next 6 months' or 'coming 6 days'",
+                    },
+                    "as_of_date": {
+                        "type": "string",
+                        "description": "Optional ISO date (YYYY-MM-DD) for today; defaults to current session date",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Optional explicit window start (YYYY-MM-DD) when parsing fails",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "Optional explicit window end (YYYY-MM-DD) when parsing fails",
+                    },
+                },
+                "required": [],
+            },
         },
     },
     {
@@ -134,6 +168,17 @@ def _tool_get_dasha(features: dict) -> str:
     return "\n".join(lines)
 
 
+def _tool_get_timing_window(features: dict, tool_args: dict) -> str:
+    report = build_timing_report(
+        features,
+        window_text=tool_args.get("window_text"),
+        as_of_date=tool_args.get("as_of_date"),
+        start_date=tool_args.get("start_date"),
+        end_date=tool_args.get("end_date"),
+    )
+    return json.dumps(report)
+
+
 def _tool_detect_intent(question: str, timeout_s: int = 30) -> str:
     result = _detect_intent(question=question, timeout_s=timeout_s)
     return json.dumps(result)
@@ -146,6 +191,8 @@ def _dispatch_tool(tool_name: str, tool_args: dict, features: dict, timeout_s: i
         return _tool_rag_search(features, query=tool_args.get("query", ""), intent=tool_args.get("intent", "general"), top_k=int(tool_args.get("top_k", 5)))
     if tool_name == "get_dasha":
         return _tool_get_dasha(features)
+    if tool_name == "get_timing_window":
+        return _tool_get_timing_window(features, tool_args)
     if tool_name == "detect_intent":
         return _tool_detect_intent(question=tool_args.get("question", ""), timeout_s=min(30, timeout_s))
     return f"[Unknown tool: {tool_name}]"
@@ -216,6 +263,8 @@ def run_agent_loop(
     system_content = (
         "You are a thoughtful Vedic astrologer helping a non-expert client. "
         "Use the available tools to gather chart data, classical references, and life-period information before answering. "
+        "For any question with a time horizon (next N months/days/years, this year, coming week), call get_timing_window "
+        "before writing your final answer so you know when dasha periods change. "
         "Write in warm, clear English. Avoid unexplained jargon (no bare '5th lord', 'debilitated', 'trik house', 'Vimshottari', 'Mahadasha', or 'Antardasha' without a short plain-language explanation). "
         "After gathering what you need, provide a complete structured analysis with: "
         "Summary, Evidence (cite classical refs with [ref:...] tags when you use them), Risk, Opportunity, and a Confidence score (0-100). "

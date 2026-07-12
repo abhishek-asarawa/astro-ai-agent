@@ -111,7 +111,7 @@ def _get_current_and_next_dasha(timeline, on_date):
     return current, upcoming
 
 
-def build_chart_features(year, month, day, hour, minute, city_name="bengaluru"):
+def build_chart_features(year, month, day, hour, minute, city_name="bengaluru", as_of_date=None):
     """Build unified chart features using all local rule modules."""
     time_data = convert_ist_to_utc(year, month, day, hour, minute)
     core = _compute_chart_core(
@@ -136,7 +136,8 @@ def build_chart_features(year, month, day, hour, minute, city_name="bengaluru"):
 
     moon_longitude = core["planets"]["Moon"]["longitude"]
     timeline = calculate_dashas(moon_longitude, year, month, day)
-    current_dasha, next_dasha = _get_current_and_next_dasha(timeline, date.today())
+    on_date = as_of_date if as_of_date is not None else date.today()
+    current_dasha, next_dasha = _get_current_and_next_dasha(timeline, on_date)
 
     active_antardasha = None
     next_antardasha = None
@@ -148,7 +149,7 @@ def build_chart_features(year, month, day, hour, minute, city_name="bengaluru"):
             current_dasha["dasha"], m_start, m_end
         )
         active_antardasha, next_antardasha = get_current_and_next_antardasha(
-            antardasha_timeline_current_md, date.today()
+            antardasha_timeline_current_md, on_date
         )
 
     return {

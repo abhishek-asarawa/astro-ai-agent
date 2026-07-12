@@ -21,10 +21,10 @@ def test_parse_structured_answer_template():
 def test_format_chat_answer_markdown_sections():
     parsed = parse_structured_answer(SAMPLE)
     md = format_chat_answer_markdown(parsed, SAMPLE)
-    assert "**In short**" in md
-    assert "**What stands out**" in md
-    assert "**What to be careful about**" in md
-    assert "**What can help**" in md
+    assert "Love may feel delayed" in md
+    assert "**Key points**" in md
+    assert "**Cautions**" in md
+    assert "**Upside**" in md
     assert "70" in md
 
 

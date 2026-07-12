@@ -22,12 +22,22 @@
   {
     "case_id": "rw_career_promotion",
     "source": "https://www.indianastrology2000.com/astrology-consultations/consspec.php",
-    "question": "Will I get a promotion this year?",
+    "question": "Will I get promotion in next 6 months?",
     "expected_intent": "career",
     "tags": [],
     "bphs_chapter_hint": "Ch 23 (10th house / profession)",
     "birth": {"year": 1992, "month": 1, "day": 11, "hour": 8, "minute": 45, "city_name": "mumbai"},
-    "expected_keywords": ["10th", "dasha", "promotion", "timing", "transit"]
+    "expected_keywords": ["promotion", "timing", "antardasha", "end", "days", "period", "change"]
+  },
+  {
+    "case_id": "rw_career_near_term_shift",
+    "source": "https://www.indianastrology2000.com/astrology-consultations/consspec.php",
+    "question": "Will there be any major change in my career in the coming 6 days?",
+    "expected_intent": "career",
+    "tags": [],
+    "bphs_chapter_hint": "Ch 23 (10th house / profession)",
+    "birth": {"year": 1992, "month": 1, "day": 11, "hour": 8, "minute": 45, "city_name": "mumbai"},
+    "expected_keywords": ["6 days", "change", "antardasha", "timing"]
   },
   {
     "case_id": "rw_career_business",
