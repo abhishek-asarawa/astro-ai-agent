@@ -39,11 +39,11 @@ def _rag_citation_template_labels(intent):
     else:
         key = (intent or "general").strip().lower() or "general"
     labels = {
-        "career": ("CareerSummary", "CareerRisk", "CareerOpportunity"),
-        "health": ("HealthSummary", "HealthRisk", "HealthOpportunity"),
-        "wealth": ("WealthSummary", "WealthRisk", "WealthOpportunity"),
-        "family": ("FamilySummary", "FamilyRisk", "FamilyOpportunity"),
-        "general": ("OverallSummary", "OverallRisk", "OverallOpportunity"),
+        "career": ("CareerSummary", "CareerRisk", "CareerOpportunity", "CareerRemedies"),
+        "health": ("HealthSummary", "HealthRisk", "HealthOpportunity", "HealthRemedies"),
+        "wealth": ("WealthSummary", "WealthRisk", "WealthOpportunity", "WealthRemedies"),
+        "family": ("FamilySummary", "FamilyRisk", "FamilyOpportunity", "FamilyRemedies"),
+        "general": ("OverallSummary", "OverallRisk", "OverallOpportunity", "OverallRemedies"),
     }
     return labels.get(key, labels["general"])
 
@@ -65,8 +65,8 @@ def _render_rag_block(chunks, max_tokens, intent=None):
         allowed_refs.add(chunk.ref_id)
         lines.append(f"[ref:{chunk.ref_id}]: {text}")
 
-    summary_l, risk_l, opp_l = _rag_citation_template_labels(intent)
-    template_hint = f"{summary_l}/Evidence/{risk_l}/{opp_l}/Confidence"
+    summary_l, risk_l, opp_l, remedies_l = _rag_citation_template_labels(intent)
+    template_hint = f"{summary_l}/Evidence/{risk_l}/{opp_l}/{remedies_l}/Confidence"
     allowed_list = ", ".join(f"[ref:{ref_id}]" for ref_id in sorted(allowed_refs))
     lines.extend([
         "",

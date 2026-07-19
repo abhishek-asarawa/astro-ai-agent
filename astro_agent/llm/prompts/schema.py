@@ -10,6 +10,7 @@ class DomainResponseSchema(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     risk: str
     opportunity: str
+    remedies: list[str] = Field(default_factory=list)
     confidence: int = Field(ge=0, le=100)
 
 

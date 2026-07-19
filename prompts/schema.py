@@ -1,17 +1,3 @@
-"""Pydantic schema for structured domain LLM responses."""
+"""Deprecated shim — import from ``astro_agent.llm.prompts.schema``."""
 
-from __future__ import annotations
-
-from pydantic import BaseModel, Field
-
-
-class DomainResponseSchema(BaseModel):
-    summary: str
-    evidence: list[str] = Field(default_factory=list)
-    risk: str
-    opportunity: str
-    confidence: int = Field(ge=0, le=100)
-
-
-def domain_response_json_schema() -> dict:
-    return DomainResponseSchema.model_json_schema()
+from astro_agent.llm.prompts.schema import *  # noqa: F401,F403

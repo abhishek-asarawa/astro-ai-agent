@@ -1,12 +1,6 @@
 """Shared template adherence markers for eval harnesses."""
 
-TEMPLATE_MARKERS = {
-    "career": ["careersummary:", "evidence:", "careerrisk:", "careeropportunity:", "confidence:"],
-    "health": ["healthsummary:", "evidence:", "healthrisk:", "healthopportunity:", "confidence:"],
-    "wealth": ["wealthsummary:", "evidence:", "wealthrisk:", "wealthopportunity:", "confidence:"],
-    "family": ["familysummary:", "evidence:", "familyrisk:", "familyopportunity:", "confidence:"],
-    "general": ["overallsummary:", "evidence:", "overallrisk:", "overallopportunity:", "confidence:"],
-}
+from astro_agent.intents import TEMPLATE_MARKERS
 
 
 def score_template_adherence(text, intent):

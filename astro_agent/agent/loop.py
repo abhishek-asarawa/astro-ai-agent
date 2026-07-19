@@ -1,215 +1,53 @@
-"""Agentic ReAct loop using Ollama native tool-calling (>= 0.3).
+"""ReAct agent loop using Ollama native tool-calling.
 
-Exposes tools to the model: build_chart, rag_search, get_dasha, get_timing_window, detect_intent.
-Runs at most MAX_AGENT_TURNS tool-call rounds before falling back to the current
-linear prompt-and-generate path.
+Tools are registered in ``astro_agent.agent.tools``. The loop runs at most
+``MAX_AGENT_TURNS`` tool-call rounds before falling back to the linear
+prompt-and-generate path.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import time
+
 import requests
 
-from astro_agent.rag import search as rag_search
-from astro_agent.utils.tracer import estimate_prompt_tokens, trace_llm_call
-from astro_agent.rag import config as cfg
-from astro_agent.rag.inject import _features_to_chart_facts, _strip_unknown_refs, build_rag_enriched_prompt
-from astro_agent.llm.prompts.builder import build_prompt_for_intent
+from astro_agent.agent.tools import dispatch_tool, ollama_tools_payload
+from astro_agent.llm import config as llm_cfg
 from astro_agent.llm.client import query_ollama_once, resolve_ollama_config
+from astro_agent.llm.prompts.builder import build_prompt_for_intent
+from astro_agent.rag.inject import _strip_unknown_refs, build_rag_enriched_prompt
 from astro_agent.utils.text_utils import extract_ref_ids, strip_reasoning_blocks
-from astro_agent.chart.dashas import format_dasha_timeline
-from astro_agent.chart.timing import build_timing_report
-from astro_agent.routing.intent_router import detect_intent as _detect_intent
+from astro_agent.utils.tracer import estimate_prompt_tokens, trace_llm_call
 
-OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-MAX_AGENT_TURNS = int(os.environ.get("ASTRO_MAX_AGENT_TURNS", "4"))
-
-TOOLS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "build_chart",
-            "description": (
-                "Return a compact Vedic chart summary for the native: lagna, "
-                "planet placements with dignities, and house lordships."
-            ),
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "rag_search",
-            "description": (
-                "Search the BPHS classical reference corpus for verses relevant to a query. "
-                "Returns ref-tagged chunk texts you can cite in Evidence bullets."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The search query describing what classical guidance to find"},
-                    "intent": {"type": "string", "enum": ["career", "health", "wealth", "family", "general"], "description": "Domain intent to bias retrieval toward"},
-                    "top_k": {"type": "integer", "description": "Number of chunks to return (default 5, max 8)"},
-                },
-                "required": ["query", "intent"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_dasha",
-            "description": (
-                "Return the current Mahadasha/Antardasha snapshot and full Vimshottari Mahadasha timeline. "
-                "Use for present-period facts only; for date windows, countdowns, or upcoming changes use get_timing_window."
-            ),
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_timing_window",
-            "description": (
-                "Resolve a timing window (e.g. next 6 months, coming 6 days) and return JSON with active periods, "
-                "days until sub-period ends, dasha transitions inside the window, and a near-term 6-day checkpoint."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "window_text": {
-                        "type": "string",
-                        "description": "Natural-language horizon from the question, e.g. 'next 6 months' or 'coming 6 days'",
-                    },
-                    "as_of_date": {
-                        "type": "string",
-                        "description": "Optional ISO date (YYYY-MM-DD) for today; defaults to current session date",
-                    },
-                    "start_date": {
-                        "type": "string",
-                        "description": "Optional explicit window start (YYYY-MM-DD) when parsing fails",
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "Optional explicit window end (YYYY-MM-DD) when parsing fails",
-                    },
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "detect_intent",
-            "description": "Classify the user question into one astrological domain: career, health, wealth, family, or general.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string", "description": "The user question to classify"}
-                },
-                "required": ["question"],
-            },
-        },
-    },
-]
-
-
-def _tool_build_chart(features: dict) -> str:
-    lagna = features.get("lagna", {})
-    planets = features.get("planets", {})
-    dignities = features.get("planetary_dignities", {})
-    house_lords = features.get("house_lordships", {})
-
-    lines = [f"Lagna: {lagna.get('rashi', '?')} ({lagna.get('degrees', '?')}°)"]
-    for name, data in planets.items():
-        d = dignities.get(name, "[NEUTRAL]")
-        lines.append(f"  {name}: {data['rashi']} ({data['degrees']}°) {data['nakshatra']} {d}")
-    lines.append("\nHouse Lordships:")
-    for planet, houses in house_lords.items():
-        if houses:
-            lines.append(f"  {planet}: houses {houses}")
-    return "\n".join(lines)
-
-
-def _tool_rag_search(features: dict, query: str, intent: str, top_k: int = 5) -> str:
-    chart_facts = _features_to_chart_facts(features)
-    top_k = min(int(top_k), 8)
-    try:
-        chunks = rag_search.search(question=query, intent=intent, chart_facts=chart_facts, top_k=top_k)
-    except Exception as exc:
-        return f"[rag_search error: {exc}]"
-    if not chunks:
-        return "[No classical references found for this query]"
-    lines = []
-    for chunk in chunks:
-        ref_id = getattr(chunk, "ref_id", "?")
-        text = (getattr(chunk, "text", "") or "").strip()
-        lines.append(f"[ref:{ref_id}]: {text}")
-    return "\n".join(lines)
-
-
-def _tool_get_dasha(features: dict) -> str:
-    active = features.get("active_dasha") or {}
-    nxt = features.get("next_dasha") or {}
-    active_ant = features.get("active_antardasha") or {}
-    next_ant = features.get("next_antardasha") or {}
-    timeline = features.get("dasha_timeline", [])
-    lines = [
-        f"Active Mahadasha: {active.get('dasha', '?')} ({active.get('start', '?')} to {active.get('end', '?')})",
-        f"Active Antardasha: {active_ant.get('dasha', '?')} ({active_ant.get('start', '?')} to {active_ant.get('end', '?')})",
-        f"Next Mahadasha: {nxt.get('dasha', '?')} ({nxt.get('start', '?')} to {nxt.get('end', '?')})",
-        f"Next Antardasha: {next_ant.get('dasha', '?')} ({next_ant.get('start', '?')} to {next_ant.get('end', '?')})",
-        "",
-        format_dasha_timeline(timeline),
-    ]
-    return "\n".join(lines)
-
-
-def _tool_get_timing_window(features: dict, tool_args: dict) -> str:
-    report = build_timing_report(
-        features,
-        window_text=tool_args.get("window_text"),
-        as_of_date=tool_args.get("as_of_date"),
-        start_date=tool_args.get("start_date"),
-        end_date=tool_args.get("end_date"),
-    )
-    return json.dumps(report)
-
-
-def _tool_detect_intent(question: str, timeout_s: int = 30) -> str:
-    result = _detect_intent(question=question, timeout_s=timeout_s)
-    return json.dumps(result)
+MAX_AGENT_TURNS = llm_cfg.MAX_AGENT_TURNS
+# Backward-compatible names used by tests / callers.
+OLLAMA_CHAT_URL = llm_cfg.OLLAMA_CHAT_URL
+TOOLS = ollama_tools_payload()
 
 
 def _dispatch_tool(tool_name: str, tool_args: dict, features: dict, timeout_s: int) -> str:
-    if tool_name == "build_chart":
-        return _tool_build_chart(features)
-    if tool_name == "rag_search":
-        return _tool_rag_search(features, query=tool_args.get("query", ""), intent=tool_args.get("intent", "general"), top_k=int(tool_args.get("top_k", 5)))
-    if tool_name == "get_dasha":
-        return _tool_get_dasha(features)
-    if tool_name == "get_timing_window":
-        return _tool_get_timing_window(features, tool_args)
-    if tool_name == "detect_intent":
-        return _tool_detect_intent(question=tool_args.get("question", ""), timeout_s=min(30, timeout_s))
-    return f"[Unknown tool: {tool_name}]"
+    """Dispatch a registered tool (thin wrapper for tests)."""
+    return dispatch_tool(tool_name, tool_args, features, timeout_s)
 
 
 def _call_ollama_chat(messages: list[dict], model_name: str, timeout_s: int, num_ctx: int, tools: list[dict] | None = None) -> dict | None:
+    """POST to Ollama /api/chat; return parsed JSON or None on failure."""
     payload: dict = {
         "model": model_name,
         "messages": messages,
         "stream": False,
-        "options": {"num_ctx": num_ctx, "temperature": 0.2},
+        "options": {"num_ctx": num_ctx, "temperature": llm_cfg.DEFAULT_TEMPERATURE},
     }
     if tools:
         payload["tools"] = tools
     t0 = time.perf_counter()
     try:
-        resp = requests.post(OLLAMA_CHAT_URL, json=payload, timeout=(10, timeout_s))
+        resp = requests.post(
+            llm_cfg.OLLAMA_CHAT_URL,
+            json=payload,
+            timeout=(llm_cfg.HTTP_CONNECT_TIMEOUT_S, timeout_s),
+        )
         resp.raise_for_status()
         data = resp.json()
         trace_llm_call(
@@ -231,6 +69,7 @@ def _call_ollama_chat(messages: list[dict], model_name: str, timeout_s: int, num
 
 
 def _linear_fallback(user_question, features, intent, model_name, timeout_s, num_ctx, rag_enabled, prior_context):
+    """Fall back to the non-agentic generate path when tools exhaust or chat fails."""
     if rag_enabled:
         bundle = build_rag_enriched_prompt(features, user_question, intent, prior_context=prior_context)
         prompt = bundle["prompt"]
@@ -240,7 +79,12 @@ def _linear_fallback(user_question, features, intent, model_name, timeout_s, num
         allowed_refs = None
 
     answer = query_ollama_once(
-        prompt, temperature=0.2, timeout_s=timeout_s, model_name=model_name, allowed_refs=allowed_refs, num_ctx=num_ctx,
+        prompt,
+        temperature=llm_cfg.DEFAULT_TEMPERATURE,
+        timeout_s=timeout_s,
+        model_name=model_name,
+        allowed_refs=allowed_refs,
+        num_ctx=num_ctx,
     )
     return answer or ""
 
@@ -267,8 +111,13 @@ def run_agent_loop(
         "before writing your final answer so you know when dasha periods change. "
         "Write in warm, clear English. Avoid unexplained jargon (no bare '5th lord', 'debilitated', 'trik house', 'Vimshottari', 'Mahadasha', or 'Antardasha' without a short plain-language explanation). "
         "After gathering what you need, provide a complete structured analysis with: "
-        "Summary, Evidence (cite classical refs with [ref:...] tags when you use them), Risk, Opportunity, and a Confidence score (0-100). "
-        "Evidence bullets must be understandable to someone new to astrology."
+        "Summary, Evidence (cite classical refs with [ref:...] tags when you use them), Risk, Opportunity, "
+        "Remedies (2-3 practical behavioral/lifestyle suggestions; no gemstone/mantra/puja claims unless grounded in retrieved refs), "
+        "and a Confidence score (0-100). "
+        "Evidence bullets must be understandable to someone new to astrology. "
+        "If the question involves a specific sub-topic (e.g. intimacy/sexual satisfaction, dosha types), "
+        "explicitly check the planets and houses most tied to that sub-topic even when the overall theme is broader "
+        "(e.g. intimacy -> Venus, Mars, 7th/8th/12th houses)."
     )
     if prior_context:
         system_content += f"\n\nPriorContext:\n{prior_context}"
@@ -281,11 +130,12 @@ def run_agent_loop(
     tool_calls_made: list[str] = []
     seen_rag_refs: list[str] = []
     turns_taken = 0
+    tools_payload = ollama_tools_payload()
 
     while turns_taken < MAX_AGENT_TURNS:
         data = _call_ollama_chat(
             messages=messages, model_name=resolved_model, timeout_s=resolved_timeout,
-            num_ctx=resolved_num_ctx, tools=TOOLS,
+            num_ctx=resolved_num_ctx, tools=tools_payload,
         )
         if data is None:
             break

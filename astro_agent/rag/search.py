@@ -47,6 +47,11 @@ _LORDSHIP_IN_DIGNITY_RE = re.compile(
 
 
 def _house_effect_chapter_hints(question, chart_facts, intent=None):
+    """Collect BPHS house-effects chapter numbers hinted by the question or chart.
+
+    Used at rerank to prefer house-specific chapters over broad "effects" noise
+    after full-book ingest.
+    """
     hints = set()
     q = (question or "").strip()
     for m in _HOUSE_EFFECT_PHRASE_RE.finditer(q):
@@ -193,6 +198,7 @@ _FAMILY_SYNONYMS = {
 
 
 def expand_queries(question, intent, chart_facts):
+    """Build multi-query expansions (literal + structural + intent-focused [+ optional HyDE])."""
     queries = []
     base = (question or "").strip()
     if base:
@@ -419,6 +425,7 @@ def _bm25_max_scores_per_id(queries, tokenized_corpus, ids):
 
 
 def _rrf_scores(dense_rank, bm25_rank, ids_union):
+    """Reciprocal Rank Fusion over dense and BM25 rank maps (higher is better)."""
     k = cfg.RRF_K
     wd = cfg.RRF_WEIGHT_DENSE
     ws = cfg.RRF_WEIGHT_SPARSE
@@ -588,15 +595,17 @@ def _annotate_matched_entities(chunks, query_entities):
 
 
 def _min_max_norm(values):
+    """Scale scores to [0, 1]; flat lists become NEUTRAL_RERANK_SCORE."""
     if not values:
         return []
     lo, hi = min(values), max(values)
     if hi <= lo + 1e-12:
-        return [0.5] * len(values)
+        return [cfg.NEUTRAL_RERANK_SCORE] * len(values)
     return [(v - lo) / (hi - lo) for v in values]
 
 
 def _heuristic_scores_for_chunks(chunks, intent, question=None, chart_facts=None):
+    """Blend entity/intent/length/chapter heuristics into a pre-CE score per chunk."""
     intent_key = f"intent_{intent}" if intent in cfg.SUPPORTED_INTENTS else None
     hint_chapters = _house_effect_chapter_hints(question, chart_facts, intent)
     scores = []
