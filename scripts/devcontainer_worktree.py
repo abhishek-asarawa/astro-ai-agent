@@ -7,6 +7,7 @@ import argparse
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from scripts.devcontainer_support import (
     DevcontainerContext,
@@ -22,7 +23,7 @@ class HelperError(RuntimeError):
 
 def _run(
     command: list[str],
-    **kwargs: object,
+    **kwargs: Any,
 ) -> subprocess.CompletedProcess[str]:
     """Run a helper subprocess; isolated for deterministic unit tests."""
     return subprocess.run(command, check=True, text=True, **kwargs)

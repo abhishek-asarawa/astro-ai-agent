@@ -52,6 +52,14 @@ def test_fast_mode_passes_on_clean_tree():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_ruff_and_mypy_cover_scripts_directory():
+    """Helper scripts get the same lint/type gate as astro_agent/ and tests/."""
+    body = SCRIPT.read_text()
+    assert "ruff check astro_agent/ tests/ scripts/" in body
+    assert "ruff format --check astro_agent/ tests/ scripts/" in body
+    assert "mypy astro_agent/ scripts/" in body
+
+
 HOOKS_DIR = REPO_ROOT / ".githooks"
 
 
