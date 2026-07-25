@@ -69,3 +69,7 @@ Untitled
 
 # --- Git worktrees ---
 .worktrees/
+
+# --- Dev Container (host-specific, generated) ---
+.devcontainer/.env
+.devcontainer/compose.local.yaml
