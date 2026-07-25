@@ -19,6 +19,7 @@ coverage.xml
 # --- Virtual environments ---
 venv/
 .venv/
+.venv311/
 .pip_target/
 
 # --- Secrets / local env ---
