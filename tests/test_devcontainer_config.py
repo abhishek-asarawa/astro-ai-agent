@@ -75,3 +75,20 @@ def test_dockerignore_retains_build_manifests_and_package_source() -> None:
     assert "requirements-dev.txt" not in text
     assert "pyproject.toml" not in text
     assert "astro_agent/" not in text
+
+
+def test_documentation_covers_required_workflows() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "./scripts/devcontainer-worktree.sh",
+        "Reopen in Container",
+        "./scripts/run_ci_checks.sh full",
+        "streamlit run app.py --server.address 0.0.0.0",
+        "docker compose port app 8501",
+        "http://host.docker.internal:11434/api/tags",
+        "docker compose",
+        "down",
+        "does not remove the Git worktree or branch",
+    )
+    for phrase in required_phrases:
+        assert phrase in text

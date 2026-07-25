@@ -78,6 +78,7 @@ cp .env.example .env
 - Business feature specs (no code): [`docs/specs/`](docs/specs/)
 - Portable agent entrypoint: [`AGENTS.md`](AGENTS.md)
 - Multi-book corpus engineering path: [`docs/CORPUS_PATH.md`](docs/CORPUS_PATH.md)
+- Parallel worktree Dev Containers: [`docs/development/devcontainers.md`](docs/development/devcontainers.md)
 
 ## Project Overview
 
