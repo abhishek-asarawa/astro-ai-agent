@@ -31,6 +31,12 @@ Open either the primary checkout or a linked worktree in Cursor or VS Code and
 choose **Dev Containers: Reopen in Container**. The host initialization command
 generates worktree-local, gitignored Compose metadata before attachment.
 
+`devcontainer.json` sets no `remoteUser`/`updateRemoteUserUID`, so the IDE
+attaches as whatever user Compose starts the container with — it inherits the Compose `user: "${LOCAL_UID}:${LOCAL_GID}"`
+from `compose.yaml`, the same host-owned identity the CLI helper uses when it
+runs `postCreateCommand` non-interactively — so files the IDE creates keep
+host-file ownership instead of drifting to `root` or a fixed `vscode` UID.
+
 ## Test and run
 
 Inside the container, run the CI-equivalent gate:

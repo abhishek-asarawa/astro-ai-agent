@@ -8,8 +8,6 @@
   "workspaceFolder": "/workspace",
   "initializeCommand": "python3 scripts/devcontainer_support.py prepare --worktree .",
   "postCreateCommand": "python -m pip install --user -e .",
-  "remoteUser": "vscode",
-  "updateRemoteUserUID": true,
   "shutdownAction": "stopCompose",
   "forwardPorts": [
     8501

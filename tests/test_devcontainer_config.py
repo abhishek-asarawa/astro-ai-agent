@@ -30,6 +30,9 @@ def test_compose_service_is_idle_and_uses_shared_ollama() -> None:
     assert "host.docker.internal:host-gateway" in text
     assert "target: 8501" in text
     assert 'published: "0"' in text
+    # Publish only on loopback: an ephemeral host port bound to 0.0.0.0 would
+    # expose each worktree's Streamlit UI to the whole LAN.
+    assert "host_ip: 127.0.0.1" in text
     assert "streamlit run" not in text
 
 
@@ -40,7 +43,11 @@ def test_devcontainer_attaches_to_compose_app_service() -> None:
     assert config["dockerComposeFile"] == ["compose.yaml", "compose.local.yaml"]
     assert config["initializeCommand"] == "python3 scripts/devcontainer_support.py prepare --worktree ."
     assert config["postCreateCommand"] == "python -m pip install --user -e ."
-    assert config["remoteUser"] == "vscode"
+    # No `remoteUser`/`updateRemoteUserUID`: the IDE must attach as whatever
+    # user Compose starts the container with (`user: "${LOCAL_UID}:${LOCAL_GID}"`
+    # in compose.yaml), matching the host-owned bind mount the helper CLI uses.
+    assert "remoteUser" not in config
+    assert "updateRemoteUserUID" not in config
     assert config["shutdownAction"] == "stopCompose"
 
 
@@ -89,6 +96,17 @@ def test_documentation_covers_required_workflows() -> None:
         "docker compose",
         "down",
         "does not remove the Git worktree or branch",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_describes_ide_attach_identity() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "no `remoteUser`/`updateRemoteUserUID`",
+        'inherits the Compose `user: "${LOCAL_UID}:${LOCAL_GID}"`',
+        "same host-owned identity the CLI helper uses",
     )
     for phrase in required_phrases:
         assert phrase in text

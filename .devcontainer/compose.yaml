@@ -26,3 +26,4 @@ services:
       - target: 8501
         published: "0"
         protocol: tcp
+        host_ip: 127.0.0.1
