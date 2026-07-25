@@ -66,12 +66,31 @@ def resolve_context(worktree: Path) -> DevcontainerContext:
     )
 
 
+def _bind_mount(path: Path) -> str:
+    """Render one same-path bind-mount Compose volume entry."""
+    quoted = json.dumps(str(path))
+    return f"      - type: bind\n        source: {quoted}\n        target: {quoted}\n"
+
+
 def _render_override(context: DevcontainerContext) -> str:
-    """Render only the host-specific Git metadata mount."""
+    """Render the host-specific mounts only a linked worktree needs.
+
+    A linked worktree's `.git` file, and the matching
+    `<git-common-dir>/worktrees/<name>/gitdir` pointer maintained by the
+    primary checkout, both record this worktree's absolute host path. If the
+    container only mounted the worktree at `/workspace` (as compose.yaml
+    does) and the common dir at its own absolute path (below), those
+    pointers would resolve to a path that does not exist inside the
+    container. Git treats that as a dangling worktree, so `git worktree
+    prune`/`list` run from inside the container could delete this worktree's
+    administrative metadata. Mounting the worktree at its own absolute host
+    path too — the same trick already used for the common dir — keeps both
+    pointers valid from inside the container.
+    """
     if not context.linked_worktree:
         return "services: {}\n"
-    path = json.dumps(str(context.git_common_dir))
-    return f"services:\n  app:\n    volumes:\n      - type: bind\n        source: {path}\n        target: {path}\n"
+    volumes = _bind_mount(context.git_common_dir) + _bind_mount(context.worktree)
+    return f"services:\n  app:\n    volumes:\n{volumes}"
 
 
 def prepare_local_files(worktree: Path) -> DevcontainerContext:

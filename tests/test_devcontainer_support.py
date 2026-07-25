@@ -87,6 +87,17 @@ def test_prepare_writes_gitignored_compose_metadata(
     assert f'source: "{(primary / ".git").resolve()}"' in override
     assert f'target: "{(primary / ".git").resolve()}"' in override
 
+    # The worktree's own `.git` file records an absolute host path back to
+    # this checkout; git also resolves that path from the *other* direction
+    # via the common dir's `worktrees/<name>/gitdir` pointer. Mounting the
+    # worktree at that same absolute path (in addition to /workspace) keeps
+    # both pointers valid inside the container, so `git worktree
+    # prune`/`list` never see a dangling worktree and delete its metadata.
+    resolved_worktree = worktree.resolve()
+    assert f'source: "{resolved_worktree}"' in override
+    assert f'target: "{resolved_worktree}"' in override
+    assert override.count("type: bind") == 2
+
 
 def test_primary_checkout_gets_empty_local_override(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
