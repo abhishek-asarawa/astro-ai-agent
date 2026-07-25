@@ -19,6 +19,26 @@ from pathlib import Path
 MAX_SLUG_LENGTH = 32
 MAX_PROJECT_LENGTH = 63
 
+# Git hooks (and some IDEs) export GIT_DIR / GIT_WORK_TREE. Those override
+# `git -C <path>`, so fixture repos and helper `-C` calls would hit the parent
+# checkout instead of the intended tree. Strip them for every `-C` invocation.
+_GIT_ENV_OVERRIDE_KEYS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_INDEX_FILE",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+)
+
+
+def git_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Return an environment where `git -C` is not overridden by parent GIT_* vars."""
+    env = dict(os.environ if base is None else base)
+    for key in _GIT_ENV_OVERRIDE_KEYS:
+        env.pop(key, None)
+    return env
+
 
 @dataclass(frozen=True)
 class DevcontainerContext:
@@ -37,6 +57,7 @@ def _git(worktree: Path, *args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+        env=git_subprocess_env(),
     )
     return result.stdout.strip()
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import scripts.devcontainer_worktree as helper
+from scripts.devcontainer_support import git_subprocess_env
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SHELL_HELPER = REPO_ROOT / "scripts" / "devcontainer-worktree.sh"
@@ -18,6 +19,7 @@ def _git(repo: Path, *args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+        env=git_subprocess_env(),
     )
     return result.stdout.strip()
 

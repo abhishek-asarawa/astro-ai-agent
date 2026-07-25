@@ -12,6 +12,7 @@ from typing import Any
 from scripts.devcontainer_support import (
     DevcontainerContext,
     compose_command,
+    git_subprocess_env,
     prepare_local_files,
     sanitize_slug,
 )
@@ -48,6 +49,7 @@ def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
         check=check,
         capture_output=True,
         text=True,
+        env=git_subprocess_env(),
     )
 
 
@@ -76,7 +78,10 @@ def create_agent_worktree(
         check_prerequisites()
     worktree.parent.mkdir(exist_ok=True)
     try:
-        _run(["git", "-C", str(root), "worktree", "add", "-b", branch, str(worktree), base])
+        _run(
+            ["git", "-C", str(root), "worktree", "add", "-b", branch, str(worktree), base],
+            env=git_subprocess_env(),
+        )
     except subprocess.CalledProcessError as exc:
         raise HelperError(f"git worktree add failed for {worktree}") from exc
 

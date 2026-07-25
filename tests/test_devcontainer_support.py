@@ -8,6 +8,7 @@ import pytest
 
 from scripts.devcontainer_support import (
     compose_command,
+    git_subprocess_env,
     prepare_local_files,
     resolve_context,
     sanitize_slug,
@@ -20,6 +21,7 @@ def _git(repo: Path, *args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+        env=git_subprocess_env(),
     )
     return result.stdout.strip()
 
@@ -70,6 +72,20 @@ def test_resolve_context_detects_linked_worktree(
     assert context.git_common_dir == (primary / ".git").resolve()
     assert context.project_name == "astro-astro-app-agent-one"
     assert context.linked_worktree is True
+
+
+def test_resolve_context_ignores_parent_git_dir_env(
+    linked_worktree: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hooks export GIT_DIR; that must not override git -C for fixture trees."""
+    primary, worktree = linked_worktree
+    monkeypatch.setenv("GIT_DIR", str(Path(__file__).resolve().parents[1] / ".git"))
+
+    context = resolve_context(worktree)
+
+    assert context.git_common_dir == (primary / ".git").resolve()
+    assert context.project_name == "astro-astro-app-agent-one"
 
 
 def test_prepare_writes_gitignored_compose_metadata(
