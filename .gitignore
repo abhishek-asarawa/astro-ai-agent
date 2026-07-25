@@ -66,3 +66,6 @@ interactions.jsonl
 
 # --- Misc scratch ---
 Untitled
+
+# --- Git worktrees ---
+.worktrees/
