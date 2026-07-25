@@ -453,8 +453,11 @@ Expected: `fast checks passed.` and all tests pass. If the prompt-fingerprint te
 
 - [ ] **Step 12: Commit**
 
+Stage explicit paths only — the repo has untracked vendored files under
+`.cursor/` that must not be committed, so never use `git add -A` here.
+
 ```bash
-git add -A
+git add astro_agent/ tests/
 git commit -m "style: make ruff clean (autofix, format, strict zip, quote strip, imports)"
 ```
 
