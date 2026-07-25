@@ -92,3 +92,46 @@ def test_documentation_covers_required_workflows() -> None:
     )
     for phrase in required_phrases:
         assert phrase in text
+
+
+def test_documentation_requires_streamlit_http_success_on_both_smoke_urls() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "curl -sf -o /dev/null -w '%{http_code}\\n' http://localhost:<smoke-one-port>",
+        "curl -sf -o /dev/null -w '%{http_code}\\n' http://localhost:<smoke-two-port>",
+        "must print `200` and exit `0`",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_describes_dependency_cache_verification() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "up -d --build app",
+        "reports the `pip install --no-cache-dir -r requirements-dev.txt` step as `CACHED`",
+        "source is bind-mounted at runtime and never copied into the image",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_labels_smoke_image_cleanup_as_temporary() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "## Temporary smoke-image cleanup",
+        "Routine `down` intentionally leaves the built image in place",
+        "docker image rm <smoke-one-project>-app <smoke-two-project>-app",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_describes_home_survival_and_loss_precisely() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "survives `docker compose ... stop` and `start`",
+        "lost whenever the container is removed or recreated",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
