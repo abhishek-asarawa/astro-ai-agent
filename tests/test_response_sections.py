@@ -1,6 +1,5 @@
 from astro_agent.utils.response_sections import format_chat_answer_fallback, parse_structured_answer
 
-
 SAMPLE = """OverallSummary: Love may feel delayed in this chapter of life.
 Evidence:
 - Romance sector looks strained right now.

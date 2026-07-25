@@ -1,20 +1,35 @@
 # yogas.py
 
 EXALTATION_MAP = {
-    "Sun": "Aries", "Moon": "Taurus", "Mars": "Capricorn",
-    "Mercury": "Virgo", "Jupiter": "Cancer", "Venus": "Pisces", "Saturn": "Libra"
+    "Sun": "Aries",
+    "Moon": "Taurus",
+    "Mars": "Capricorn",
+    "Mercury": "Virgo",
+    "Jupiter": "Cancer",
+    "Venus": "Pisces",
+    "Saturn": "Libra",
 }
 
 DEBILITATION_MAP = {
-    "Sun": "Libra", "Moon": "Scorpio", "Mars": "Cancer",
-    "Mercury": "Pisces", "Jupiter": "Capricorn", "Venus": "Virgo", "Saturn": "Aries"
+    "Sun": "Libra",
+    "Moon": "Scorpio",
+    "Mars": "Cancer",
+    "Mercury": "Pisces",
+    "Jupiter": "Capricorn",
+    "Venus": "Virgo",
+    "Saturn": "Aries",
 }
 
 OWN_SIGN_MAP = {
-    "Sun": ["Leo"], "Moon": ["Cancer"], "Mars": ["Aries", "Scorpio"],
-    "Mercury": ["Gemini", "Virgo"], "Jupiter": ["Sagittarius", "Pisces"],
-    "Venus": ["Taurus", "Libra"], "Saturn": ["Capricorn", "Aquarius"]
+    "Sun": ["Leo"],
+    "Moon": ["Cancer"],
+    "Mars": ["Aries", "Scorpio"],
+    "Mercury": ["Gemini", "Virgo"],
+    "Jupiter": ["Sagittarius", "Pisces"],
+    "Venus": ["Taurus", "Libra"],
+    "Saturn": ["Capricorn", "Aquarius"],
 }
+
 
 def get_planetary_dignity(planet: str, rashi: str) -> list:
     """
@@ -22,7 +37,7 @@ def get_planetary_dignity(planet: str, rashi: str) -> list:
     Returns a list of string tags (e.g., ["[EXALTED]"]).
     """
     tags = []
-    
+
     # Rahu and Ketu are shadows and skip standard dignity rules in this basic pass
     if planet in ["Rahu", "Ketu"]:
         return tags
@@ -33,8 +48,9 @@ def get_planetary_dignity(planet: str, rashi: str) -> list:
         tags.append("[DEBILITATED]")
     elif rashi in OWN_SIGN_MAP.get(planet, []):
         tags.append("[OWN SIGN / SWA-KSHETRA]")
-        
+
     return tags
+
 
 def apply_tags_to_chart(planet_data: dict) -> dict:
     """
@@ -46,5 +62,5 @@ def apply_tags_to_chart(planet_data: dict) -> dict:
         tags = get_planetary_dignity(planet, rashi)
         tag_str = " ".join(tags) if tags else "[NEUTRAL]"
         tagged_data[planet] = f"{rashi} {tag_str}"
-        
+
     return tagged_data

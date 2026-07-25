@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator
 
 from astro_agent.agent.loop import run_agent_loop
 from astro_agent.chart.engine import build_chart_features

@@ -31,7 +31,9 @@ def _dispatch_tool(tool_name: str, tool_args: dict, features: dict, timeout_s: i
     return dispatch_tool(tool_name, tool_args, features, timeout_s)
 
 
-def _call_ollama_chat(messages: list[dict], model_name: str, timeout_s: int, num_ctx: int, tools: list[dict] | None = None) -> dict | None:
+def _call_ollama_chat(
+    messages: list[dict], model_name: str, timeout_s: int, num_ctx: int, tools: list[dict] | None = None
+) -> dict | None:
     """POST to Ollama /api/chat; return parsed JSON or None on failure."""
     payload: dict = {
         "model": model_name,
@@ -134,8 +136,11 @@ def run_agent_loop(
 
     while turns_taken < MAX_AGENT_TURNS:
         data = _call_ollama_chat(
-            messages=messages, model_name=resolved_model, timeout_s=resolved_timeout,
-            num_ctx=resolved_num_ctx, tools=tools_payload,
+            messages=messages,
+            model_name=resolved_model,
+            timeout_s=resolved_timeout,
+            num_ctx=resolved_num_ctx,
+            tools=tools_payload,
         )
         if data is None:
             break
@@ -180,8 +185,18 @@ def run_agent_loop(
 
     print(f"[agent_loop] falling back to linear path after {turns_taken} tool turn(s)", flush=True)
     answer = _linear_fallback(
-        user_question=user_question, features=features, intent=intent,
-        model_name=resolved_model, timeout_s=resolved_timeout, num_ctx=resolved_num_ctx,
-        rag_enabled=rag_enabled, prior_context=prior_context,
+        user_question=user_question,
+        features=features,
+        intent=intent,
+        model_name=resolved_model,
+        timeout_s=resolved_timeout,
+        num_ctx=resolved_num_ctx,
+        rag_enabled=rag_enabled,
+        prior_context=prior_context,
     )
-    return {"answer": strip_reasoning_blocks(answer), "method": "linear_fallback", "tool_calls_made": tool_calls_made, "error": None}
+    return {
+        "answer": strip_reasoning_blocks(answer),
+        "method": "linear_fallback",
+        "tool_calls_made": tool_calls_made,
+        "error": None,
+    }

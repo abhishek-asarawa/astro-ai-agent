@@ -56,7 +56,9 @@ def _tool_build_chart(features: dict, **_kwargs) -> str:
     return "\n".join(lines)
 
 
-def _tool_rag_search(features: dict, *, query: str = "", intent: str = "general", top_k: int = RAG_SEARCH_TOP_K_DEFAULT, **_kwargs) -> str:
+def _tool_rag_search(
+    features: dict, *, query: str = "", intent: str = "general", top_k: int = RAG_SEARCH_TOP_K_DEFAULT, **_kwargs
+) -> str:
     """Search the classical corpus; cite returned [ref:...] ids in Evidence."""
     chart_facts = _features_to_chart_facts(features)
     top_k = min(int(top_k), RAG_SEARCH_TOP_K_MAX)
@@ -105,7 +107,9 @@ def _tool_get_timing_window(features: dict, tool_args: dict | None = None, **_kw
     return json.dumps(report)
 
 
-def _tool_detect_intent(features: dict, *, question: str = "", timeout_s: int = DETECT_INTENT_TIMEOUT_CAP_S, **_kwargs) -> str:
+def _tool_detect_intent(
+    features: dict, *, question: str = "", timeout_s: int = DETECT_INTENT_TIMEOUT_CAP_S, **_kwargs
+) -> str:
     """Classify the user question into one domain intent."""
     result = _detect_intent(question=question, timeout_s=timeout_s)
     return json.dumps(result)
@@ -132,7 +136,10 @@ TOOL_SPECS: list[ToolSpec] = [
         parameters={
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "The search query describing what classical guidance to find"},
+                "query": {
+                    "type": "string",
+                    "description": "The search query describing what classical guidance to find",
+                },
                 "intent": {
                     "type": "string",
                     "enum": _INTENT_ENUM,
@@ -188,9 +195,7 @@ TOOL_SPECS: list[ToolSpec] = [
         description="Classify the user question into one astrological domain: career, health, wealth, family, or general.",
         parameters={
             "type": "object",
-            "properties": {
-                "question": {"type": "string", "description": "The user question to classify"}
-            },
+            "properties": {"question": {"type": "string", "description": "The user question to classify"}},
             "required": ["question"],
         },
         handler=_tool_detect_intent,

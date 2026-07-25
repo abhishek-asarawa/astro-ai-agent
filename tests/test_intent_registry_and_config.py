@@ -49,7 +49,7 @@ def test_rag_config_shares_ollama_embed_url():
 
 
 def test_prompts_shim_reexports_canonical_builders():
-    from prompts.builder import build_prompt_for_intent as shim_build
     from astro_agent.llm.prompts.builder import build_prompt_for_intent as canon_build
+    from prompts.builder import build_prompt_for_intent as shim_build
 
     assert shim_build is canon_build

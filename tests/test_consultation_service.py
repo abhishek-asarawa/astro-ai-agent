@@ -7,8 +7,14 @@ from tests.fixtures.minimal_chart_features import MINIMAL_FEATURES
 
 
 @patch("astro_agent.service.consultation.humanize_answer", side_effect=lambda raw, q, **kw: f"HUMAN:{raw[:40]}")
-@patch("astro_agent.service.consultation.query_ollama_once", return_value="CareerSummary: Good.\nEvidence:\n- x\nConfidence: 70")
-@patch("astro_agent.service.consultation.detect_intent", return_value={"intent": "career", "method": "rules", "confidence": 1.0})
+@patch(
+    "astro_agent.service.consultation.query_ollama_once",
+    return_value="CareerSummary: Good.\nEvidence:\n- x\nConfidence: 70",
+)
+@patch(
+    "astro_agent.service.consultation.detect_intent",
+    return_value={"intent": "career", "method": "rules", "confidence": 1.0},
+)
 @patch("astro_agent.service.consultation.build_chart_features", return_value=MINIMAL_FEATURES)
 def test_run_consultation_linear_path(_chart, _intent, _ollama, _humanize):
     result = run_consultation(
@@ -34,7 +40,10 @@ def test_run_consultation_linear_path(_chart, _intent, _ollama, _humanize):
 
 @patch("astro_agent.service.consultation.run_agent_loop")
 @patch("astro_agent.service.consultation.humanize_answer", side_effect=lambda raw, q, **kw: raw)
-@patch("astro_agent.service.consultation.detect_intent", return_value={"intent": "career", "method": "rules", "confidence": 1.0})
+@patch(
+    "astro_agent.service.consultation.detect_intent",
+    return_value={"intent": "career", "method": "rules", "confidence": 1.0},
+)
 @patch("astro_agent.service.consultation.build_chart_features", return_value=MINIMAL_FEATURES)
 def test_run_consultation_agent_path(_chart, _intent, _humanize, mock_agent):
     mock_agent.return_value = {

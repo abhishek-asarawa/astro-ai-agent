@@ -19,6 +19,7 @@ def _env_bool(key, default=False):
         return default
     return val.strip().lower() in ("1", "true", "yes", "on")
 
+
 OLLAMA_EMBED_URL = _LLM_EMBED_URL
 EMBED_MODEL = "nomic-embed-text"
 EMBED_DIM = 768
@@ -108,14 +109,42 @@ BOOK_CITATION_PREFIX = {
 # Extra entity terms for dosha / remedy / matching (ingest + query expansion).
 # Wired into extract_entities via _EXTRA_ENTITY_TERMS below.
 DOSHA_REMEDY_ENTITY_TERMS = [
-    "manglik", "mangal dosha", "kuja dosha",
-    "sade sati", "shani dhaiya", "shani sade sati",
-    "kaal sarp", "kaal sarp yog", "kaal sarp dosha",
-    "pitru dosha", "pitra dosha",
-    "guna milan", "ashtakoot", "nadi dosha", "bhakoot",
-    "yellow sapphire", "pukhraj", "ruby", "manik", "emerald", "panna",
-    "red coral", "moonga", "pearl", "moti", "diamond", "heera", "rudraksha",
-    "puja", "havan", "yantra", "mantra", "chant", "fasting", "donation", "charity",
+    "manglik",
+    "mangal dosha",
+    "kuja dosha",
+    "sade sati",
+    "shani dhaiya",
+    "shani sade sati",
+    "kaal sarp",
+    "kaal sarp yog",
+    "kaal sarp dosha",
+    "pitru dosha",
+    "pitra dosha",
+    "guna milan",
+    "ashtakoot",
+    "nadi dosha",
+    "bhakoot",
+    "yellow sapphire",
+    "pukhraj",
+    "ruby",
+    "manik",
+    "emerald",
+    "panna",
+    "red coral",
+    "moonga",
+    "pearl",
+    "moti",
+    "diamond",
+    "heera",
+    "rudraksha",
+    "puja",
+    "havan",
+    "yantra",
+    "mantra",
+    "chant",
+    "fasting",
+    "donation",
+    "charity",
 ]
 
 # HyDE-lite (Phase 3a) optional query rewrite for retrieval.
@@ -149,9 +178,7 @@ CROSS_ENCODER_MAX_LENGTH = int(os.environ.get("ASTRO_CROSS_ENCODER_MAX_LENGTH", 
 # When CE is on: weight on min-max normalized CE vs heuristic (1 - weight on heuristic).
 # Pure CE (1.0) regressed gold@3 with ms-marco-MiniLM; ~0.15 matches baseline gold/silver
 # on local golden eval while still injecting CE signal.
-CROSS_ENCODER_HEURISTIC_BLEND = float(
-    os.environ.get("ASTRO_CROSS_ENCODER_HEURISTIC_BLEND", "0.15")
-)
+CROSS_ENCODER_HEURISTIC_BLEND = float(os.environ.get("ASTRO_CROSS_ENCODER_HEURISTIC_BLEND", "0.15"))
 
 
 def estimate_tokens(text):
@@ -162,20 +189,47 @@ def estimate_tokens(text):
 
 
 _PLANET_TERMS = [
-    "Sun", "Moon", "Mars", "Mercury", "Jupiter",
-    "Venus", "Saturn", "Rahu", "Ketu",
+    "Sun",
+    "Moon",
+    "Mars",
+    "Mercury",
+    "Jupiter",
+    "Venus",
+    "Saturn",
+    "Rahu",
+    "Ketu",
 ]
 
 _SIGN_TERMS = [
-    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
+    "Aries",
+    "Taurus",
+    "Gemini",
+    "Cancer",
+    "Leo",
+    "Virgo",
+    "Libra",
+    "Scorpio",
+    "Sagittarius",
+    "Capricorn",
+    "Aquarius",
+    "Pisces",
 ]
 
 _DIGNITY_TERMS = [
-    "exalted", "exaltation", "debilitated", "debilitation",
-    "own sign", "own house", "own navamsa", "own navamamsha",
-    "combust", "combustion", "retrograde",
-    "friendly", "enemy", "neutral",
+    "exalted",
+    "exaltation",
+    "debilitated",
+    "debilitation",
+    "own sign",
+    "own house",
+    "own navamsa",
+    "own navamamsha",
+    "combust",
+    "combustion",
+    "retrograde",
+    "friendly",
+    "enemy",
+    "neutral",
     "strong",
 ]
 
@@ -205,12 +259,8 @@ _LORD_RE = _lord_pattern()
 _ASC_LORD_RE = _ascendant_lord_pattern()
 _LAGNA_RE = _lagna_pattern()
 
-_PLANET_RE = re.compile(
-    r"\b(" + "|".join(_PLANET_TERMS) + r")\b"
-)
-_SIGN_RE = re.compile(
-    r"\b(" + "|".join(_SIGN_TERMS) + r")\b"
-)
+_PLANET_RE = re.compile(r"\b(" + "|".join(_PLANET_TERMS) + r")\b")
+_SIGN_RE = re.compile(r"\b(" + "|".join(_SIGN_TERMS) + r")\b")
 _DIGNITY_RE = re.compile(
     r"\b(" + "|".join(re.escape(t) for t in _DIGNITY_TERMS) + r")\b",
     re.IGNORECASE,
@@ -307,10 +357,7 @@ def _compile_intent_regex(words):
     return re.compile(r"\b(" + "|".join(parts) + r")\b", re.IGNORECASE)
 
 
-_INTENT_RE = {
-    intent: _compile_intent_regex(words)
-    for intent, words in INTENT_KEYWORDS.items()
-}
+_INTENT_RE = {intent: _compile_intent_regex(words) for intent, words in INTENT_KEYWORDS.items()}
 
 
 def detect_intent_tags(text):

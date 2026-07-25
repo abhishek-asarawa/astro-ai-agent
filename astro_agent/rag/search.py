@@ -17,8 +17,8 @@ top-k most relevant chunks from the local Chroma index. Strategy:
 """
 
 import re
-from functools import lru_cache
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import chromadb
 import requests
@@ -36,8 +36,18 @@ _HOUSE_EFFECT_PHRASE_RE = re.compile(
     re.IGNORECASE,
 )
 _ORDINAL_TO_HOUSE_NUM = {
-    "1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5, "6th": 6,
-    "7th": 7, "8th": 8, "9th": 9, "10th": 10, "11th": 11, "12th": 12,
+    "1st": 1,
+    "2nd": 2,
+    "3rd": 3,
+    "4th": 4,
+    "5th": 5,
+    "6th": 6,
+    "7th": 7,
+    "8th": 8,
+    "9th": 9,
+    "10th": 10,
+    "11th": 11,
+    "12th": 12,
 }
 
 _LORDSHIP_IN_DIGNITY_RE = re.compile(
@@ -276,6 +286,8 @@ def expand_queries(question, intent, chart_facts):
 
 
 _REF_TAG_ANY_RE = re.compile(r"\[ref:[^\]]+\]")
+# Strip straight and curly quotes that models wrap around rewritten queries.
+_SURROUNDING_QUOTES_RE = re.compile(r'^["\'\u201c\u201d\u2018\u2019]+|["\'\u201c\u201d\u2018\u2019]+$')
 
 
 @lru_cache(maxsize=64)
@@ -283,7 +295,9 @@ def _hyde_rewrite_query(question: str, intent: str, structural: str, intent_word
     if not question:
         return ""
 
-    from astro_agent.llm.client import query_ollama_once  # lazy: breaks rag_search → llm_client → rag_inject → rag_search
+    from astro_agent.llm.client import (
+        query_ollama_once,  # lazy: breaks rag_search → llm_client → rag_inject → rag_search
+    )
 
     structural_norm = " ".join((structural or "").split())
     intent_words_norm = " ".join((intent_words or "").split())
@@ -310,7 +324,7 @@ def _hyde_rewrite_query(question: str, intent: str, structural: str, intent_word
 
     out = (raw or "").replace("\n", " ").strip()
     out = _REF_TAG_ANY_RE.sub("", out).strip()
-    out = out.strip("\"'""''").strip()
+    out = _SURROUNDING_QUOTES_RE.sub("", out).strip()
     out = re.sub(r"\s+", " ", out).strip()
 
     if not out:
@@ -379,7 +393,7 @@ def _flatten_chroma_result(result):
     docs = result["documents"][0]
     metas = result["metadatas"][0]
     dists = result["distances"][0]
-    for i, (cid, doc, meta, dist) in enumerate(zip(ids, docs, metas, dists)):
+    for i, (cid, doc, meta, dist) in enumerate(zip(ids, docs, metas, dists, strict=False)):
         out.append({"rank": i, "id": cid, "text": doc, "metadata": meta or {}, "distance": dist})
     return out
 
@@ -485,7 +499,7 @@ def _hybrid_fusion_chunks(collection, queries, merged_dense, where, fall_back_no
 
 
 def _chunks_from_rrf_order(id_order, merged_dense, ids_list, docs_list, metas_list, bm25_scores):
-    by_id = {cid: {"text": d, "metadata": m or {}} for cid, d, m in zip(ids_list, docs_list, metas_list)}
+    by_id = {cid: {"text": d, "metadata": m or {}} for cid, d, m in zip(ids_list, docs_list, metas_list, strict=False)}
     max_bm25 = max(bm25_scores.values()) if bm25_scores else 0.0
     chunks = []
     for i, cid in enumerate(id_order):
@@ -582,6 +596,7 @@ def _get_cross_encoder():
     _ce_load_attempted = True
     try:
         from sentence_transformers import CrossEncoder
+
         _ce_model = CrossEncoder(cfg.CROSS_ENCODER_MODEL, max_length=cfg.CROSS_ENCODER_MAX_LENGTH)
     except Exception:
         _ce_model = None
@@ -675,7 +690,7 @@ def _rerank_cross_encoder(cross_encoder, chunks, question, intent, chart_facts):
     heur_n = _min_max_norm(heur_raw)
     ce_n = _min_max_norm(ce_raw)
     w = max(0.0, min(1.0, cfg.CROSS_ENCODER_HEURISTIC_BLEND))
-    for chunk, hn, cn in zip(chunks, heur_n, ce_n):
+    for chunk, hn, cn in zip(chunks, heur_n, ce_n, strict=False):
         chunk.score = w * cn + (1.0 - w) * hn
     chunks.sort(key=lambda c: c.score, reverse=True)
     for i, chunk in enumerate(chunks):
@@ -685,7 +700,7 @@ def _rerank_cross_encoder(cross_encoder, chunks, question, intent, chart_facts):
 
 def _rerank_heuristic(chunks, intent, question=None, chart_facts=None):
     scores = _heuristic_scores_for_chunks(chunks, intent, question, chart_facts)
-    for chunk, s in zip(chunks, scores):
+    for chunk, s in zip(chunks, scores, strict=False):
         chunk.score = s
     chunks.sort(key=lambda c: c.score, reverse=True)
     for i, chunk in enumerate(chunks):

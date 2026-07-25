@@ -1,15 +1,17 @@
 """Ollama HTTP client for generation."""
+
 import argparse
 import json
 import os
 import time
+
 import requests
 
-from astro_agent.utils.cities import CityResolutionError
 from astro_agent.chart.engine import build_chart_features
 from astro_agent.llm import config as llm_cfg
-from astro_agent.llm.prompts.builder import build_career_prompt, build_prompt_for_intent
-from astro_agent.rag.inject import build_rag_enriched_prompt, _strip_unknown_refs
+from astro_agent.llm.prompts.builder import build_career_prompt
+from astro_agent.rag.inject import _strip_unknown_refs, build_rag_enriched_prompt
+from astro_agent.utils.cities import CityResolutionError
 from astro_agent.utils.tracer import estimate_prompt_tokens, trace_llm_call
 
 # Re-exports for callers/tests that import these names from client.
@@ -125,7 +127,9 @@ def run_astro_query(prompt, model_name=None, timeout_s=None, allowed_refs=None, 
                     flush=True,
                 )
     except requests.exceptions.Timeout:
-        print("\nError: Ollama timed out before sending output. Model may be too heavy for current hardware.", flush=True)
+        print(
+            "\nError: Ollama timed out before sending output. Model may be too heavy for current hardware.", flush=True
+        )
     except requests.exceptions.RequestException as e:
         print(f"\nError calling Ollama API: {e}", flush=True)
     except json.JSONDecodeError as e:
@@ -152,8 +156,13 @@ def query_ollama_once(
     resolved_model = model_name
     try:
         response, resolved_model = _call_ollama(
-            prompt, stream=False, temperature=temperature, timeout_s=timeout_s,
-            model_name=model_name, num_ctx=num_ctx, response_format=response_format,
+            prompt,
+            stream=False,
+            temperature=temperature,
+            timeout_s=timeout_s,
+            model_name=model_name,
+            num_ctx=num_ctx,
+            response_format=response_format,
         )
         response.raise_for_status()
         data = response.json()
@@ -194,7 +203,9 @@ def parse_args():
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--num-ctx", type=int, default=None)
-    parser.add_argument("--deep", action="store_true", help=f"Use {DEEP_MODEL_NAME} instead of the default {MODEL_NAME}.")
+    parser.add_argument(
+        "--deep", action="store_true", help=f"Use {DEEP_MODEL_NAME} instead of the default {MODEL_NAME}."
+    )
     parser.add_argument("--no-preview", action="store_true")
     rag_group = parser.add_mutually_exclusive_group()
     rag_group.add_argument("--rag-on", action="store_true", dest="rag_on")
@@ -206,7 +217,10 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     model_name, timeout_s, num_ctx = resolve_ollama_config(
-        model_name=args.model, timeout_s=args.timeout, num_ctx=args.num_ctx, deep=args.deep,
+        model_name=args.model,
+        timeout_s=args.timeout,
+        num_ctx=args.num_ctx,
+        deep=args.deep,
     )
     print(
         f"Using model={model_name} timeout_s={timeout_s} num_ctx={num_ctx} "
@@ -229,7 +243,10 @@ if __name__ == "__main__":
         rag_bundle = build_rag_enriched_prompt(features, args.question, detected_intent)
         prompt = rag_bundle["prompt"]
         allowed_refs = rag_bundle["allowed_refs"]
-        print(f"RAG mode: ON | intent={rag_bundle['intent']} | refs={len(allowed_refs)} | active={rag_bundle['rag_active']}", flush=True)
+        print(
+            f"RAG mode: ON | intent={rag_bundle['intent']} | refs={len(allowed_refs)} | active={rag_bundle['rag_active']}",
+            flush=True,
+        )
     else:
         prompt = build_career_prompt(features, args.question)
         allowed_refs = None

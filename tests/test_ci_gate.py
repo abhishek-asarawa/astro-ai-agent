@@ -41,3 +41,9 @@ def test_full_mode_refuses_old_interpreter(tmp_path):
     result = _run(["full"], extra_env={"PYTHON": str(stub)})
     assert result.returncode != 0
     assert "Python >= 3.11 required" in result.stderr
+
+
+def test_fast_mode_passes_on_clean_tree():
+    """The repo must stay lint-clean so the pre-commit hook is usable."""
+    result = _run(["fast"])
+    assert result.returncode == 0, result.stdout + result.stderr

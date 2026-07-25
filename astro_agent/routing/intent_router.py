@@ -19,7 +19,9 @@ def _rule_scores(question):
             if kw in text:
                 score += 1
         scores[intent] = score
-    if ("wife" in text or "spouse" in text) and ("12th lord" in text or "twelfth lord" in text or re.search(r"\b12th\b", text)):
+    if ("wife" in text or "spouse" in text) and (
+        "12th lord" in text or "twelfth lord" in text or re.search(r"\b12th\b", text)
+    ):
         scores["family"] = scores.get("family", 0) + 2
     if "father" in text or "mother" in text or "parents" in text:
         scores["family"] = scores.get("family", 0) + 1
@@ -91,7 +93,7 @@ def _extract_intent_from_text(text):
     end = stripped.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            data = json.loads(stripped[start: end + 1])
+            data = json.loads(stripped[start : end + 1])
             intent = data.get("intent", "").strip().lower()
             if intent in SUPPORTED_INTENTS:
                 return intent
@@ -100,7 +102,7 @@ def _extract_intent_from_text(text):
 
     lowered = stripped.lower()
     for intent in SUPPORTED_INTENTS:
-        if f"\"{intent}\"" in lowered or f"intent: {intent}" in lowered or lowered == intent:
+        if f'"{intent}"' in lowered or f"intent: {intent}" in lowered or lowered == intent:
             return intent
     return None
 
@@ -115,7 +117,7 @@ def _classify_intent_with_llm(question, timeout_s=None, num_ctx=None):
         "Allowed intents: career, health, wealth, family, general.\n"
         "Rules:\n"
         "- Return ONLY strict JSON.\n"
-        "- Format: {\"intent\":\"<one_of_allowed>\"}\n"
+        '- Format: {"intent":"<one_of_allowed>"}\n'
         "- Pick one best intent even if question touches multiple topics.\n\n"
         f"Question: {question}"
     )

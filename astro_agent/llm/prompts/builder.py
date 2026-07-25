@@ -3,8 +3,6 @@
 import re
 
 from astro_agent.chart.dashas import format_dasha_timeline
-from astro_agent.chart.timing import build_timing_report, format_timing_context_block, question_has_time_horizon
-from astro_agent.rag import config as cfg
 from astro_agent.chart.engine import (
     _get_house_lord_for_house,
     _render_dasha_section,
@@ -12,6 +10,8 @@ from astro_agent.chart.engine import (
     _render_functional_lords,
     _render_planet_strengths,
 )
+from astro_agent.chart.timing import build_timing_report, format_timing_context_block, question_has_time_horizon
+from astro_agent.rag import config as cfg
 
 _PLAIN_LANGUAGE_RULES = (
     "Write for a curious non-expert. Use warm, clear English.\n"
@@ -111,8 +111,7 @@ def _build_domain_prompt(
 ):
     body = (
         f"You are a thoughtful Vedic astrologer focused on {domain_name} guidance.\n"
-        "Use only the provided computed data and avoid unsupported claims.\n"
-        + _PLAIN_LANGUAGE_RULES
+        "Use only the provided computed data and avoid unsupported claims.\n" + _PLAIN_LANGUAGE_RULES
     )
     if cfg.STRUCTURED_OUTPUT_ENABLED:
         body += (
@@ -137,10 +136,7 @@ def _build_domain_prompt(
             "- <practical suggestion 2>\n"
             "Confidence: <0-100 integer>\n\n"
         )
-    body += (
-        f"{signal_header}:\n"
-        + _render_domain_signals(features, signal_house_map)
-    )
+    body += f"{signal_header}:\n" + _render_domain_signals(features, signal_house_map)
     subtopic_block = _render_subtopic_signals(features, user_question)
     if subtopic_block:
         body += "\n\n" + subtopic_block
@@ -177,10 +173,7 @@ def _build_domain_prompt(
                 "6th house/service-competition, and 2nd house/pay or salary themes using the provided CareerSignals.\n"
                 "- Do not answer only with generic hard-work advice; tie the practical advice to the timing window.\n"
             )
-    body += (
-        (f"\n\nPriorContext:\n{prior_context}" if prior_context else "")
-        + f"\n\nQuestion: {user_question}"
-    )
+    body += (f"\n\nPriorContext:\n{prior_context}" if prior_context else "") + f"\n\nQuestion: {user_question}"
     return body
 
 
@@ -194,7 +187,12 @@ def build_career_prompt(features, user_question, prior_context=None):
         opportunity_label="CareerOpportunity",
         remedies_label="CareerRemedies",
         signal_header="CareerSignals",
-        signal_house_map=[("10th house lord", 10), ("6th house lord", 6), ("2nd house lord", 2), ("11th house lord", 11)],
+        signal_house_map=[
+            ("10th house lord", 10),
+            ("6th house lord", 6),
+            ("2nd house lord", 2),
+            ("11th house lord", 11),
+        ],
         prior_context=prior_context,
     )
 

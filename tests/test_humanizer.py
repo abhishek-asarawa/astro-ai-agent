@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 from astro_agent.llm.humanizer import humanize_answer
 
-
 SAMPLE_RAW = """OverallSummary: Your chart shows mixed signals for intimacy.
 Evidence:
 - Venus is in a private sign.
