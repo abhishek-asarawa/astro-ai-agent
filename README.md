@@ -36,11 +36,25 @@ ollama pull nomic-embed-text       # embedding model for RAG
 
 ### 2. Install Python dependencies
 
+CI runs Python 3.11, and the pre-push gate requires 3.11 or newer.
+
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+brew install python@3.11
+/opt/homebrew/opt/python@3.11/bin/python3.11 -m venv .venv311
+source .venv311/bin/activate
+pip install -r requirements-dev.txt
+pip install -e .
 ```
+
+### 2b. Install git hooks (once per clone)
+
+```bash
+./scripts/install-hooks.sh
+```
+
+This points git at `.githooks/`: commits run the fast lint gate, pushes run the
+full CI-equivalent gate (ruff, mypy, pytest), so PR checks hold no surprises.
+Activate `.venv311` before commit/push so the hooks find Python 3.11 tooling.
 
 ### 3. (Optional) Build the RAG corpus index
 
@@ -119,10 +133,13 @@ Prerequisites: venv activated; Ollama running (default `http://localhost:11434`,
 streamlit run app.py
 ```
 
-### Unit tests / lint
+### Quality gate
+
+Local hooks and GitHub Actions run the same script:
 
 ```bash
-ASTRO_CI=1 pytest
-ruff check astro_agent tests
-mypy astro_agent
+./scripts/run_ci_checks.sh fast   # ruff lint + format check (pre-commit)
+./scripts/run_ci_checks.sh full   # + mypy + ASTRO_CI=1 pytest (pre-push, CI)
 ```
+
+Bypass only in emergencies with `git push --no-verify`; CI will still fail.

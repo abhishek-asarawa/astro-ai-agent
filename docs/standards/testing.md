@@ -54,3 +54,10 @@ def test_tool_get_timing_window_returns_json(monkeypatch, sample_features):
 # 2) evals/*.py             — quality gates (keyword/template/retrieval) on demand
 # 3) CI must stay green:    ASTRO_CI=1 pytest tests/ -v --tb=short
 ```
+
+## Local gate matches CI
+
+`.githooks/pre-push` runs `scripts/run_ci_checks.sh full`, which is the same
+command GitHub Actions runs: ruff check, ruff format check, `mypy astro_agent/`,
+and `ASTRO_CI=1 pytest tests/`. Full mode requires Python >= 3.11 because CI
+pins 3.11. Install the hooks once with `./scripts/install-hooks.sh`.
