@@ -68,3 +68,7 @@ exclude = ["evals/", "tests/", "scripts/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+# Bare `pytest` (no `-m`) does not add the repo root to sys.path the way
+# `python -m pytest` does. `scripts/` ships a `scripts/__init__.py`, so this
+# entry makes `import scripts...` resolve under both invocations.
+pythonpath = ["."]
