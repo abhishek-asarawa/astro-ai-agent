@@ -5,7 +5,8 @@ Local Vedic astrology analysis pipeline with structured chart features, RAG over
 ## Quick Start
 
 ```bash
-source venv/bin/activate
+# Create .venv311 once — see Setup §2
+source .venv311/bin/activate
 streamlit run app.py
 ```
 
@@ -127,7 +128,7 @@ prompts/          # deprecated shim → astro_agent.llm.prompts
 
 ### Run interactive UI
 
-Prerequisites: venv activated; Ollama running (default `http://localhost:11434`, overridable via `ASTRO_OLLAMA_HOST`).
+Prerequisites: `.venv311` activated; Ollama running (default `http://localhost:11434`, overridable via `ASTRO_OLLAMA_HOST`).
 
 ```bash
 streamlit run app.py

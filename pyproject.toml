@@ -23,7 +23,7 @@ dev = [
     "pytest",
     "ruff",
     "mypy",
-    "types-requests",
+    "types-requests>=2.31,<3",
     "PyMuPDF",
 ]
 

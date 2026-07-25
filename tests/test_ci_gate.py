@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,8 @@ SCRIPT = REPO_ROOT / "scripts" / "run_ci_checks.sh"
 
 def _run(args, extra_env=None):
     env = os.environ.copy()
+    # Prefer the pytest interpreter (has ruff) over ambient PATH python3.
+    env.setdefault("PYTHON", sys.executable)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(

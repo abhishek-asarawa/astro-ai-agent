@@ -11,8 +11,12 @@ MODE="${1:-full}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Override with PYTHON=... to test the gate against a specific interpreter.
-PY="${PYTHON:-python3}"
+# Prefer the project 3.11 venv when present; PYTHON=... still overrides (tests).
+if [ -z "${PYTHON:-}" ] && [ -x "$REPO_ROOT/.venv311/bin/python" ]; then
+    PY="$REPO_ROOT/.venv311/bin/python"
+else
+    PY="${PYTHON:-python3}"
+fi
 
 die() {
     printf '\n[run_ci_checks] %s\n' "$1" >&2
@@ -27,8 +31,9 @@ require_python_version() {
     # CI pins 3.11; older interpreters can produce different lint/type/test
     # results, which is exactly the PR surprise this gate exists to prevent.
     if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
-        die "Python >= 3.11 required for full checks.
-Set up a 3.11 environment:
+        die "Python >= 3.11 required for full checks (using: $PY).
+When PYTHON is unset, this script prefers .venv311/bin/python if it exists.
+Otherwise create a 3.11 environment:
   brew install python@3.11
   /opt/homebrew/opt/python@3.11/bin/python3.11 -m venv .venv311
   source .venv311/bin/activate
@@ -41,7 +46,7 @@ require_tool() {
     local tool="$1"
     if ! "$PY" -m "$tool" --version >/dev/null 2>&1; then
         die "$tool is not available for '$PY'.
-Install dev tooling:
+Install/refresh dev tooling in the active (or .venv311) environment:
   pip install -r requirements-dev.txt && pip install -e ."
     fi
 }
