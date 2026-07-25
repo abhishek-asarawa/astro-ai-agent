@@ -106,7 +106,7 @@ def create_agent_worktree(
                 ".",
             )
         )
-    except (subprocess.CalledProcessError, HelperError) as exc:
+    except subprocess.CalledProcessError as exc:
         recovery = " ".join(compose_command(context, "down"))
         raise HelperError(
             f"container setup failed; worktree retained at {worktree}\n"

@@ -137,6 +137,37 @@ def test_start_builds_container_and_installs_editable_package(
     assert any(command[-7:] == ["python", "-m", "pip", "install", "--user", "-e", "."] for command in compose_commands)
 
 
+def test_existing_compose_resources_reject_start_without_rewrapping(
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(helper, "check_prerequisites", lambda: None)
+    compose_commands: list[list[str]] = []
+
+    def record_commands(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[:2] == ["docker", "compose"]:
+            compose_commands.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="container-id\n", stderr="")
+        return subprocess.run(command, check=True, text=True, **kwargs)
+
+    monkeypatch.setattr(helper, "_run", record_commands)
+
+    with pytest.raises(
+        helper.HelperError,
+        match=r"^Compose project already has resources: astro-astro-ai-agent-collision$",
+    ):
+        helper.create_agent_worktree(
+            "collision",
+            base="HEAD",
+            repo_root=repository,
+            start=True,
+        )
+
+    assert not any(command[-4:] == ["up", "-d", "--build", "app"] for command in compose_commands)
+    assert (repository / ".worktrees" / "collision").is_dir()
+    assert _git(repository, "show-ref", "--verify", "refs/heads/agent/collision")
+
+
 def test_streamlit_url_uses_docker_selected_port(
     repository: Path,
     monkeypatch: pytest.MonkeyPatch,
