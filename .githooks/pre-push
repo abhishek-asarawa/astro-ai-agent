@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Full CI-equivalent gate so PR checks hold no surprises.
+set -euo pipefail
+exec "$(git rev-parse --show-toplevel)/scripts/run_ci_checks.sh" full

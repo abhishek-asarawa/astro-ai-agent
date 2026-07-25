@@ -1,28 +1,32 @@
 """Ollama HTTP client for generation."""
+
 import argparse
 import json
 import os
 import time
+
 import requests
 
-from astro_agent.utils.cities import CityResolutionError
 from astro_agent.chart.engine import build_chart_features
-from astro_agent.llm.prompts.builder import build_career_prompt, build_prompt_for_intent
-from astro_agent.rag.inject import build_rag_enriched_prompt, _strip_unknown_refs
+from astro_agent.llm import config as llm_cfg
+from astro_agent.llm.prompts.builder import build_career_prompt
+from astro_agent.rag.inject import _strip_unknown_refs, build_rag_enriched_prompt
+from astro_agent.utils.cities import CityResolutionError
 from astro_agent.utils.tracer import estimate_prompt_tokens, trace_llm_call
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "qwen2.5:7b-instruct"
-DEEP_MODEL_NAME = "deepseek-r1:14b"
-DEFAULT_TIMEOUT_S = 120
-DEFAULT_NUM_CTX = 16384
+# Re-exports for callers/tests that import these names from client.
+OLLAMA_URL = llm_cfg.OLLAMA_GENERATE_URL
+MODEL_NAME = llm_cfg.MODEL_NAME
+DEEP_MODEL_NAME = llm_cfg.DEEP_MODEL_NAME
+DEFAULT_TIMEOUT_S = llm_cfg.DEFAULT_TIMEOUT_S
+DEFAULT_NUM_CTX = llm_cfg.DEFAULT_NUM_CTX
 
 
 def resolve_ollama_config(model_name=None, timeout_s=None, num_ctx=None, deep=False):
     """Resolve model, timeout, and context window from args/env/defaults."""
     env_deep = (os.getenv("ASTRO_DEEP_MODEL") or "").strip().lower()
     use_deep = bool(deep) or env_deep in ("1", "true", "yes")
-    default_model = DEEP_MODEL_NAME if use_deep else MODEL_NAME
+    default_model = llm_cfg.DEEP_MODEL_NAME if use_deep else llm_cfg.MODEL_NAME
     env_model = os.getenv("ASTRO_MODEL_NAME")
     env_timeout = os.getenv("ASTRO_OLLAMA_TIMEOUT_S")
     env_num_ctx = os.getenv("ASTRO_NUM_CTX")
@@ -33,27 +37,35 @@ def resolve_ollama_config(model_name=None, timeout_s=None, num_ctx=None, deep=Fa
         if env_timeout and env_timeout.isdigit():
             resolved_timeout = int(env_timeout)
         else:
-            resolved_timeout = DEFAULT_TIMEOUT_S
+            resolved_timeout = llm_cfg.DEFAULT_TIMEOUT_S
 
     resolved_num_ctx = num_ctx
     if resolved_num_ctx is None:
         if env_num_ctx and env_num_ctx.isdigit():
             resolved_num_ctx = int(env_num_ctx)
         else:
-            resolved_num_ctx = DEFAULT_NUM_CTX
+            resolved_num_ctx = llm_cfg.DEFAULT_NUM_CTX
 
-    return resolved_model, max(15, int(resolved_timeout)), max(1024, int(resolved_num_ctx))
+    return (
+        resolved_model,
+        max(llm_cfg.MIN_TIMEOUT_S, int(resolved_timeout)),
+        max(llm_cfg.MIN_NUM_CTX, int(resolved_num_ctx)),
+    )
 
 
 def _call_ollama(
     prompt,
     stream=False,
-    temperature=0.2,
-    timeout_s=120,
+    temperature=None,
+    timeout_s=None,
     model_name=None,
     num_ctx=None,
     response_format=None,
 ):
+    if temperature is None:
+        temperature = llm_cfg.DEFAULT_TEMPERATURE
+    if timeout_s is None:
+        timeout_s = llm_cfg.DEFAULT_TIMEOUT_S
     resolved_model, resolved_timeout, resolved_num_ctx = resolve_ollama_config(
         model_name=model_name, timeout_s=timeout_s, num_ctx=num_ctx
     )
@@ -66,10 +78,10 @@ def _call_ollama(
     if response_format is not None:
         payload["format"] = response_format
     return requests.post(
-        OLLAMA_URL,
+        llm_cfg.OLLAMA_GENERATE_URL,
         json=payload,
         stream=stream,
-        timeout=(10, resolved_timeout),
+        timeout=(llm_cfg.HTTP_CONNECT_TIMEOUT_S, resolved_timeout),
     ), resolved_model
 
 
@@ -78,7 +90,12 @@ def run_astro_query(prompt, model_name=None, timeout_s=None, allowed_refs=None, 
     try:
         print("\nAsking local model... (this can take time on first run)\n", flush=True)
         response, _resolved_model = _call_ollama(
-            prompt, stream=True, temperature=0.2, timeout_s=timeout_s, model_name=model_name, num_ctx=num_ctx,
+            prompt,
+            stream=True,
+            temperature=llm_cfg.DEFAULT_TEMPERATURE,
+            timeout_s=timeout_s,
+            model_name=model_name,
+            num_ctx=num_ctx,
         )
         response.raise_for_status()
 
@@ -110,7 +127,9 @@ def run_astro_query(prompt, model_name=None, timeout_s=None, allowed_refs=None, 
                     flush=True,
                 )
     except requests.exceptions.Timeout:
-        print("\nError: Ollama timed out before sending output. Model may be too heavy for current hardware.", flush=True)
+        print(
+            "\nError: Ollama timed out before sending output. Model may be too heavy for current hardware.", flush=True
+        )
     except requests.exceptions.RequestException as e:
         print(f"\nError calling Ollama API: {e}", flush=True)
     except json.JSONDecodeError as e:
@@ -119,7 +138,7 @@ def run_astro_query(prompt, model_name=None, timeout_s=None, allowed_refs=None, 
 
 def query_ollama_once(
     prompt,
-    temperature=0.2,
+    temperature=None,
     timeout_s=60,
     model_name=None,
     allowed_refs=None,
@@ -131,12 +150,19 @@ def query_ollama_once(
     ref_count=0,
 ):
     """Single non-streaming call, useful for evaluation harness."""
+    if temperature is None:
+        temperature = llm_cfg.DEFAULT_TEMPERATURE
     t0 = time.perf_counter()
     resolved_model = model_name
     try:
         response, resolved_model = _call_ollama(
-            prompt, stream=False, temperature=temperature, timeout_s=timeout_s,
-            model_name=model_name, num_ctx=num_ctx, response_format=response_format,
+            prompt,
+            stream=False,
+            temperature=temperature,
+            timeout_s=timeout_s,
+            model_name=model_name,
+            num_ctx=num_ctx,
+            response_format=response_format,
         )
         response.raise_for_status()
         data = response.json()
@@ -177,7 +203,9 @@ def parse_args():
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--num-ctx", type=int, default=None)
-    parser.add_argument("--deep", action="store_true", help=f"Use {DEEP_MODEL_NAME} instead of the default {MODEL_NAME}.")
+    parser.add_argument(
+        "--deep", action="store_true", help=f"Use {DEEP_MODEL_NAME} instead of the default {MODEL_NAME}."
+    )
     parser.add_argument("--no-preview", action="store_true")
     rag_group = parser.add_mutually_exclusive_group()
     rag_group.add_argument("--rag-on", action="store_true", dest="rag_on")
@@ -189,7 +217,10 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     model_name, timeout_s, num_ctx = resolve_ollama_config(
-        model_name=args.model, timeout_s=args.timeout, num_ctx=args.num_ctx, deep=args.deep,
+        model_name=args.model,
+        timeout_s=args.timeout,
+        num_ctx=args.num_ctx,
+        deep=args.deep,
     )
     print(
         f"Using model={model_name} timeout_s={timeout_s} num_ctx={num_ctx} "
@@ -212,7 +243,10 @@ if __name__ == "__main__":
         rag_bundle = build_rag_enriched_prompt(features, args.question, detected_intent)
         prompt = rag_bundle["prompt"]
         allowed_refs = rag_bundle["allowed_refs"]
-        print(f"RAG mode: ON | intent={rag_bundle['intent']} | refs={len(allowed_refs)} | active={rag_bundle['rag_active']}", flush=True)
+        print(
+            f"RAG mode: ON | intent={rag_bundle['intent']} | refs={len(allowed_refs)} | active={rag_bundle['rag_active']}",
+            flush=True,
+        )
     else:
         prompt = build_career_prompt(features, args.question)
         allowed_refs = None
@@ -220,7 +254,7 @@ if __name__ == "__main__":
 
     if not args.no_preview:
         print("PROMPT DATA GENERATED:\n")
-        print(prompt[:1200] + "\n...\n")
+        print(prompt[: llm_cfg.PROMPT_PREVIEW_CHARS] + "\n...\n")
         if args.rag_on:
             print(f"[rag] prompt preview includes refs={len(allowed_refs)}\n", flush=True)
 

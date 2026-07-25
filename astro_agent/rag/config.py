@@ -9,6 +9,9 @@ weights without touching pipeline code.
 import os
 import re
 
+from astro_agent.intents import RAG_INTENT_KEYWORDS, SUPPORTED_INTENTS
+from astro_agent.llm.config import OLLAMA_EMBED_URL as _LLM_EMBED_URL
+
 
 def _env_bool(key, default=False):
     val = os.environ.get(key)
@@ -16,7 +19,8 @@ def _env_bool(key, default=False):
         return default
     return val.strip().lower() in ("1", "true", "yes", "on")
 
-OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
+
+OLLAMA_EMBED_URL = _LLM_EMBED_URL
 EMBED_MODEL = "nomic-embed-text"
 EMBED_DIM = 768
 KEEP_ALIVE = 0
@@ -58,8 +62,11 @@ RRF_WEIGHT_DENSE = 12.0
 RRF_WEIGHT_SPARSE = 1.0
 # Minimum cosine-like similarity for BM25-only hits before rerank (dense is ~0–1).
 BM25_SIMILARITY_FLOOR = 0.05
+# Neutral mid-score when min-max normalizing a flat score list (avoids div-by-zero).
+NEUTRAL_RERANK_SCORE = 0.5
 
-SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
+# Re-exported from astro_agent.intents for backward compatibility.
+# SUPPORTED_INTENTS imported above.
 
 # Sharma English Vol.1: "Effects of the Nth House" chapter numbers in metadata.
 # Used at rerank to prefer the house-specific chapter when the question or chart
@@ -88,6 +95,57 @@ NAVAMSA_ALIGN_WEIGHT = 0.16
 # contains both 8th_lord and 6th_house entities (targets bphs-ch19-v20-22 specifically
 # over adjacent ch19 verses that lack the 8th lord element).
 HEALTH_8TH_6TH_COMBO_BONUS = 0.08
+
+# Multi-book corpus support (Phase: corpus expansion). Each book id maps to a
+# short citation prefix used in [ref:...] tags. Extend when ingesting new texts.
+BOOK_CITATION_PREFIX = {
+    "bphs": "bphs",
+    "phaladeepika": "phaladeepika",
+    "lal_kitab": "lalkitab",
+    "muhurta_chintamani": "muhurta",
+    "saravali": "saravali",
+}
+
+# Extra entity terms for dosha / remedy / matching (ingest + query expansion).
+# Wired into extract_entities via _EXTRA_ENTITY_TERMS below.
+DOSHA_REMEDY_ENTITY_TERMS = [
+    "manglik",
+    "mangal dosha",
+    "kuja dosha",
+    "sade sati",
+    "shani dhaiya",
+    "shani sade sati",
+    "kaal sarp",
+    "kaal sarp yog",
+    "kaal sarp dosha",
+    "pitru dosha",
+    "pitra dosha",
+    "guna milan",
+    "ashtakoot",
+    "nadi dosha",
+    "bhakoot",
+    "yellow sapphire",
+    "pukhraj",
+    "ruby",
+    "manik",
+    "emerald",
+    "panna",
+    "red coral",
+    "moonga",
+    "pearl",
+    "moti",
+    "diamond",
+    "heera",
+    "rudraksha",
+    "puja",
+    "havan",
+    "yantra",
+    "mantra",
+    "chant",
+    "fasting",
+    "donation",
+    "charity",
+]
 
 # HyDE-lite (Phase 3a) optional query rewrite for retrieval.
 # Default is off to avoid extra LLM calls and any production behavior change.
@@ -120,9 +178,7 @@ CROSS_ENCODER_MAX_LENGTH = int(os.environ.get("ASTRO_CROSS_ENCODER_MAX_LENGTH", 
 # When CE is on: weight on min-max normalized CE vs heuristic (1 - weight on heuristic).
 # Pure CE (1.0) regressed gold@3 with ms-marco-MiniLM; ~0.15 matches baseline gold/silver
 # on local golden eval while still injecting CE signal.
-CROSS_ENCODER_HEURISTIC_BLEND = float(
-    os.environ.get("ASTRO_CROSS_ENCODER_HEURISTIC_BLEND", "0.15")
-)
+CROSS_ENCODER_HEURISTIC_BLEND = float(os.environ.get("ASTRO_CROSS_ENCODER_HEURISTIC_BLEND", "0.15"))
 
 
 def estimate_tokens(text):
@@ -133,20 +189,47 @@ def estimate_tokens(text):
 
 
 _PLANET_TERMS = [
-    "Sun", "Moon", "Mars", "Mercury", "Jupiter",
-    "Venus", "Saturn", "Rahu", "Ketu",
+    "Sun",
+    "Moon",
+    "Mars",
+    "Mercury",
+    "Jupiter",
+    "Venus",
+    "Saturn",
+    "Rahu",
+    "Ketu",
 ]
 
 _SIGN_TERMS = [
-    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
+    "Aries",
+    "Taurus",
+    "Gemini",
+    "Cancer",
+    "Leo",
+    "Virgo",
+    "Libra",
+    "Scorpio",
+    "Sagittarius",
+    "Capricorn",
+    "Aquarius",
+    "Pisces",
 ]
 
 _DIGNITY_TERMS = [
-    "exalted", "exaltation", "debilitated", "debilitation",
-    "own sign", "own house", "own navamsa", "own navamamsha",
-    "combust", "combustion", "retrograde",
-    "friendly", "enemy", "neutral",
+    "exalted",
+    "exaltation",
+    "debilitated",
+    "debilitation",
+    "own sign",
+    "own house",
+    "own navamsa",
+    "own navamamsha",
+    "combust",
+    "combustion",
+    "retrograde",
+    "friendly",
+    "enemy",
+    "neutral",
     "strong",
 ]
 
@@ -176,18 +259,18 @@ _LORD_RE = _lord_pattern()
 _ASC_LORD_RE = _ascendant_lord_pattern()
 _LAGNA_RE = _lagna_pattern()
 
-_PLANET_RE = re.compile(
-    r"\b(" + "|".join(_PLANET_TERMS) + r")\b"
-)
-_SIGN_RE = re.compile(
-    r"\b(" + "|".join(_SIGN_TERMS) + r")\b"
-)
+_PLANET_RE = re.compile(r"\b(" + "|".join(_PLANET_TERMS) + r")\b")
+_SIGN_RE = re.compile(r"\b(" + "|".join(_SIGN_TERMS) + r")\b")
 _DIGNITY_RE = re.compile(
     r"\b(" + "|".join(re.escape(t) for t in _DIGNITY_TERMS) + r")\b",
     re.IGNORECASE,
 )
 _ASPECT_RE = re.compile(
     r"\b(" + "|".join(_ASPECT_TERMS) + r")\b",
+    re.IGNORECASE,
+)
+_DOSHA_REMEDY_RE = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in sorted(DOSHA_REMEDY_ENTITY_TERMS, key=len, reverse=True)) + r")\b",
     re.IGNORECASE,
 )
 
@@ -258,38 +341,15 @@ def extract_entities(text):
     for m in _ASPECT_RE.finditer(text):
         found.add(m.group(1).lower())
 
+    for m in _DOSHA_REMEDY_RE.finditer(text):
+        token = m.group(1).lower().replace(" ", "_")
+        found.add(token)
+
     return sorted(found)
 
 
-INTENT_KEYWORDS = {
-    "career": [
-        "career", "profession", "professional", "work", "works", "employment",
-        "occupation", "livelihood", "deed", "deeds", "duties", "duty",
-        "karma", "rajya", "authority", "position", "office",
-        "business", "trade", "governmental", "royal patronage",
-        "actions", "action",
-    ],
-    "wealth": [
-        "wealth", "wealthy", "money", "finance", "financial", "income",
-        "gain", "gains", "robes", "ornaments", "precious", "prosperity",
-        "affluence", "dhana", "fortune", "fortunes", "rich",
-    ],
-    "health": [
-        "health", "disease", "diseases", "illness", "ulcer", "bruises",
-        "leprosy", "longevity", "long life", "lifespan", "ayur", "fear",
-        "ailment", "ailments", "sick", "8th lord", "8th house", "eighth house",
-        "kendra", "afflicted",
-    ],
-    "family": [
-        "family", "marriage", "spouse", "wife", "husband", "children",
-        "child", "putra", "parent", "father", "mother", "brother",
-        "sister", "kin", "kindred", "domestic",
-    ],
-    "general": [
-        "fame", "famous", "name", "honour", "honor", "happiness",
-        "nature", "character", "personality", "life", "outlook",
-    ],
-}
+# Backward-compatible alias — prefer RAG_INTENT_KEYWORDS from astro_agent.intents.
+INTENT_KEYWORDS = RAG_INTENT_KEYWORDS
 
 
 def _compile_intent_regex(words):
@@ -297,10 +357,7 @@ def _compile_intent_regex(words):
     return re.compile(r"\b(" + "|".join(parts) + r")\b", re.IGNORECASE)
 
 
-_INTENT_RE = {
-    intent: _compile_intent_regex(words)
-    for intent, words in INTENT_KEYWORDS.items()
-}
+_INTENT_RE = {intent: _compile_intent_regex(words) for intent, words in INTENT_KEYWORDS.items()}
 
 
 def detect_intent_tags(text):

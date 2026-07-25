@@ -70,9 +70,7 @@ def resolve_city_coordinates(city_name: str) -> dict:
     try:
         from geopy.geocoders import Nominatim
     except ImportError as exc:
-        raise CityResolutionError(
-            f"City '{city_name}' is not in the static list and geopy is not installed."
-        ) from exc
+        raise CityResolutionError(f"City '{city_name}' is not in the static list and geopy is not installed.") from exc
 
     geocoder = Nominatim(user_agent="astro-ai-agent/1.0", timeout=5)
     query = city_name.strip()
@@ -82,14 +80,11 @@ def resolve_city_coordinates(city_name: str) -> dict:
     try:
         location = geocoder.geocode(query)
     except Exception as exc:
-        raise CityResolutionError(
-            f"Geocoding failed for '{city_name}': {exc}"
-        ) from exc
+        raise CityResolutionError(f"Geocoding failed for '{city_name}': {exc}") from exc
 
     if location is None:
         raise CityResolutionError(
-            f"Could not find coordinates for '{city_name}'. "
-            "Try a clearer name (e.g. 'Pune, India')."
+            f"Could not find coordinates for '{city_name}'. Try a clearer name (e.g. 'Pune, India')."
         )
 
     return {

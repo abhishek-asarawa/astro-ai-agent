@@ -1,53 +1,27 @@
 import json
 import re
 
-SUPPORTED_INTENTS = ("career", "health", "wealth", "family", "general")
+from astro_agent.intents import ROUTER_INTENT_KEYWORDS, SUPPORTED_INTENTS
+from astro_agent.llm import config as llm_cfg
 
 INTENT_CLASSIFIER_MODEL = "llama3.2:3b"
 
-INTENT_KEYWORDS = {
-    "career": [
-        "career", "job", "change job", "profession", "work", "promotion", "growth", "role",
-        "employment", "10th lord", "tenth lord", "10th house", "tenth house", "10th", "tenth",
-        "karma yogi", "livelihood", "fame", "occupation", "business", "vocation",
-        "foreign settlement", "settle abroad", "visa", "migration", "abroad",
-        "competitive exam", "higher studies", "study", "studies", "college", "admission",
-        "education", "field of study",
-    ],
-    "health": [
-        "health", "disease", "diseases", "illness", "ailment", "ailments", "medical",
-        "fitness", "injury", "wellness", "recovery", "longevity", "long life", "lifespan",
-        "8th lord", "8th house", "eighth house", "kendra", "afflicted",
-    ],
-    "wealth": [
-        "wealth", "money", "finance", "financial", "income", "salary", "investment",
-        "savings", "property", "ancestral property", "inheritance", "multiple income",
-        "gains", "prosperity", "loan", "loans", "debt", "repay",
-    ],
-    "family": [
-        "family", "marriage", "married", "spouse", "wife", "husband", "relationship",
-        "parents", "father", "mother", "children", "child", "son", "daughter",
-        "sibling", "siblings", "home", "domestic", "home life", "navamsa",
-        "navamamsha", "navamsha", "twelfth lord", "12th lord", "progeny", "offspring",
-        "9th lord", "ninth lord", "9th house", "ninth house", "fortunes", "pilgrimage",
-    ],
-    "general": [
-        "overall", "general", "life", "future", "outlook", "summary", "holistic",
-        "life purpose", "dharma", "fortune", "karma", "major life", "favorable period",
-    ],
-}
+# Backward-compatible alias — prefer importing from astro_agent.intents.
+INTENT_KEYWORDS = ROUTER_INTENT_KEYWORDS
 
 
 def _rule_scores(question):
     text = (question or "").lower().strip()
     scores = {}
-    for intent, keywords in INTENT_KEYWORDS.items():
+    for intent, keywords in ROUTER_INTENT_KEYWORDS.items():
         score = 0
         for kw in keywords:
             if kw in text:
                 score += 1
         scores[intent] = score
-    if ("wife" in text or "spouse" in text) and ("12th lord" in text or "twelfth lord" in text or re.search(r"\b12th\b", text)):
+    if ("wife" in text or "spouse" in text) and (
+        "12th lord" in text or "twelfth lord" in text or re.search(r"\b12th\b", text)
+    ):
         scores["family"] = scores.get("family", 0) + 2
     if "father" in text or "mother" in text or "parents" in text:
         scores["family"] = scores.get("family", 0) + 1
@@ -119,7 +93,7 @@ def _extract_intent_from_text(text):
     end = stripped.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            data = json.loads(stripped[start: end + 1])
+            data = json.loads(stripped[start : end + 1])
             intent = data.get("intent", "").strip().lower()
             if intent in SUPPORTED_INTENTS:
                 return intent
@@ -128,35 +102,39 @@ def _extract_intent_from_text(text):
 
     lowered = stripped.lower()
     for intent in SUPPORTED_INTENTS:
-        if f"\"{intent}\"" in lowered or f"intent: {intent}" in lowered or lowered == intent:
+        if f'"{intent}"' in lowered or f"intent: {intent}" in lowered or lowered == intent:
             return intent
     return None
 
 
-def _classify_intent_with_llm(question, timeout_s=45, num_ctx=None):
+def _classify_intent_with_llm(question, timeout_s=None, num_ctx=None):
     from astro_agent.llm.client import query_ollama_once  # lazy to avoid circular import
 
+    if timeout_s is None:
+        timeout_s = llm_cfg.INTENT_CLASSIFIER_TIMEOUT_S
     classifier_prompt = (
         "You classify user astrology questions into one intent.\n"
         "Allowed intents: career, health, wealth, family, general.\n"
         "Rules:\n"
         "- Return ONLY strict JSON.\n"
-        "- Format: {\"intent\":\"<one_of_allowed>\"}\n"
+        '- Format: {"intent":"<one_of_allowed>"}\n'
         "- Pick one best intent even if question touches multiple topics.\n\n"
         f"Question: {question}"
     )
     text = query_ollama_once(
         classifier_prompt,
-        temperature=0.0,
+        temperature=llm_cfg.INTENT_CLASSIFIER_TEMPERATURE,
         timeout_s=timeout_s,
         model_name=INTENT_CLASSIFIER_MODEL,
-        num_ctx=num_ctx or 4096,
+        num_ctx=num_ctx or llm_cfg.INTENT_CLASSIFIER_NUM_CTX,
     )
     return _extract_intent_from_text(text)
 
 
-def detect_intent(question, model_name=None, timeout_s=45, num_ctx=None):
+def detect_intent(question, model_name=None, timeout_s=None, num_ctx=None):
     """Hybrid intent detection: rules first, LLM fallback on ambiguity."""
+    if timeout_s is None:
+        timeout_s = llm_cfg.INTENT_CLASSIFIER_TIMEOUT_S
     scores = _rule_scores(question)
     best = _best_rule_intent(scores)
     if best["clear_winner"]:

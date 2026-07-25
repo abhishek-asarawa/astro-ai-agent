@@ -1,18 +1,6 @@
-"""Shared template adherence markers for eval harnesses."""
+"""Shim: prefer ``astro_agent.utils.eval_template_markers`` / ``astro_agent.intents``."""
 
-TEMPLATE_MARKERS = {
-    "career": ["careersummary:", "evidence:", "careerrisk:", "careeropportunity:", "confidence:"],
-    "health": ["healthsummary:", "evidence:", "healthrisk:", "healthopportunity:", "confidence:"],
-    "wealth": ["wealthsummary:", "evidence:", "wealthrisk:", "wealthopportunity:", "confidence:"],
-    "family": ["familysummary:", "evidence:", "familyrisk:", "familyopportunity:", "confidence:"],
-    "general": ["overallsummary:", "evidence:", "overallrisk:", "overallopportunity:", "confidence:"],
-}
+from astro_agent.intents import TEMPLATE_MARKERS
+from astro_agent.utils.eval_template_markers import score_template_adherence
 
-
-def score_template_adherence(text, intent):
-    markers = TEMPLATE_MARKERS.get((intent or "general").strip().lower(), TEMPLATE_MARKERS["general"])
-    if not (text or "").strip():
-        return 0.0
-    lower = text.lower()
-    hits = sum(1 for marker in markers if marker in lower)
-    return hits / len(markers)
+__all__ = ["TEMPLATE_MARKERS", "score_template_adherence"]

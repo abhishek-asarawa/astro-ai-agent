@@ -1,17 +1,19 @@
 """Chart computation (ephemeris, dashas, bhava)."""
-import swisseph as swe
+
 from datetime import date, datetime
 
-from astro_agent.chart.mapper import get_vedic_details
-from astro_agent.utils.cities import resolve_city_coordinates
-from astro_agent.chart.time_utils import convert_ist_to_utc
-from astro_agent.chart.lords import RASHIS, get_house_lords
-from astro_agent.chart.yogas import apply_tags_to_chart
+import swisseph as swe
+
 from astro_agent.chart.dashas import (
     calculate_antardashas,
     calculate_dashas,
     get_current_and_next_antardasha,
 )
+from astro_agent.chart.lords import RASHIS, get_house_lords
+from astro_agent.chart.mapper import get_vedic_details
+from astro_agent.chart.time_utils import convert_ist_to_utc
+from astro_agent.chart.yogas import apply_tags_to_chart
+from astro_agent.utils.cities import resolve_city_coordinates
 
 
 def _setup_julian_day(year, month, day, hour_utc):
@@ -52,8 +54,14 @@ def _compute_chart_core(year, month, day, hour_utc, city_name="bengaluru"):
     lagna_details = get_vedic_details(ascendant_long)
 
     planets = {
-        "Sun": swe.SUN, "Moon": swe.MOON, "Mars": swe.MARS, "Mercury": swe.MERCURY,
-        "Jupiter": swe.JUPITER, "Venus": swe.VENUS, "Saturn": swe.SATURN, "Rahu": swe.MEAN_NODE
+        "Sun": swe.SUN,
+        "Moon": swe.MOON,
+        "Mars": swe.MARS,
+        "Mercury": swe.MERCURY,
+        "Jupiter": swe.JUPITER,
+        "Venus": swe.VENUS,
+        "Saturn": swe.SATURN,
+        "Rahu": swe.MEAN_NODE,
     }
 
     placements = {}
@@ -145,17 +153,17 @@ def build_chart_features(year, month, day, hour, minute, city_name="bengaluru", 
     if current_dasha:
         m_start = datetime.strptime(current_dasha["start"], "%Y-%m-%d").date()
         m_end = datetime.strptime(current_dasha["end"], "%Y-%m-%d").date()
-        antardasha_timeline_current_md = calculate_antardashas(
-            current_dasha["dasha"], m_start, m_end
-        )
-        active_antardasha, next_antardasha = get_current_and_next_antardasha(
-            antardasha_timeline_current_md, on_date
-        )
+        antardasha_timeline_current_md = calculate_antardashas(current_dasha["dasha"], m_start, m_end)
+        active_antardasha, next_antardasha = get_current_and_next_antardasha(antardasha_timeline_current_md, on_date)
 
     return {
         "birth_input_ist": {
-            "year": year, "month": month, "day": day,
-            "hour": hour, "minute": minute, "city_name": city_name,
+            "year": year,
+            "month": month,
+            "day": day,
+            "hour": hour,
+            "minute": minute,
+            "city_name": city_name,
         },
         "birth_time_utc": time_data,
         "lagna": core["lagna"],
@@ -204,7 +212,9 @@ def _render_planet_strengths(features):
     lines = []
     for planet, data in features["planets"].items():
         dignity = features["planetary_dignities"].get(planet, "[NEUTRAL]")
-        lines.append(f"- {planet}: {data['rashi']} ({data['degrees']}°), Nakshatra {data['nakshatra']}, Dignity {dignity}")
+        lines.append(
+            f"- {planet}: {data['rashi']} ({data['degrees']}°), Nakshatra {data['nakshatra']}, Dignity {dignity}"
+        )
     return "\n".join(lines)
 
 

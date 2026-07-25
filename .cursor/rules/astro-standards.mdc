@@ -1,0 +1,28 @@
+---
+description: Map to repo coding standards and feature specs
+alwaysApply: true
+---
+
+# Astro AI Agent — Standards & Specs Map
+
+Before writing or changing code, follow the coding standards under `docs/standards/`.
+Start at [docs/standards/README.md](../../docs/standards/README.md) for the index of
+what applies (coding, comments, testing, config, and related docs).
+
+Before building or changing a feature, read the matching feature spec at
+`docs/specs/<feature>.md`. Discover available specs via
+[docs/specs/README.md](../../docs/specs/README.md).
+
+## Workflow
+
+1. **Standards first** — open `docs/standards/README.md`, then the specific
+   standard docs that apply to the files you will touch.
+2. **Specs before features** — open `docs/specs/README.md`, then
+   `docs/specs/<feature>.md` for the feature under work.
+3. **Brainstorming** — when using brainstorming "explore project context",
+   include reading `docs/specs/README.md` (and relevant feature specs) so
+   design work is grounded in existing product intent.
+
+This rule is a **map only**. Do not treat this file as the source of standards
+or specs; the authoritative content lives under `docs/standards/` and
+`docs/specs/`.

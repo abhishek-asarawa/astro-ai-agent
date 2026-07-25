@@ -180,11 +180,7 @@ def _pack_under_token_budget(sentences, pack_target, estimate_fn):
         return []
     out, buf = [], []
     for s in sentences:
-        pieces = (
-            _hard_split_words(s, pack_target, estimate_fn)
-            if estimate_fn(s) > pack_target
-            else [s]
-        )
+        pieces = _hard_split_words(s, pack_target, estimate_fn) if estimate_fn(s) > pack_target else [s]
         for piece in pieces:
             trial = " ".join(buf + [piece]) if buf else piece
             if buf and estimate_fn(trial) > pack_target:
@@ -224,12 +220,14 @@ def _expand_oversize_chunks(chunks):
             expanded.append(ch)
             continue
         for p in parts:
-            expanded.append({
-                "text": p,
-                "verse_start": ch["verse_start"],
-                "verse_end": ch["verse_end"],
-                "chunk_level": ch["chunk_level"],
-            })
+            expanded.append(
+                {
+                    "text": p,
+                    "verse_start": ch["verse_start"],
+                    "verse_end": ch["verse_end"],
+                    "chunk_level": ch["chunk_level"],
+                }
+            )
     return expanded
 
 
@@ -292,9 +290,7 @@ def embed_text(text):
     data = response.json()
     embedding = data.get("embedding")
     if not embedding or len(embedding) != cfg.EMBED_DIM:
-        raise RuntimeError(
-            f"Embedding API returned unexpected payload: dim={len(embedding) if embedding else 0}"
-        )
+        raise RuntimeError(f"Embedding API returned unexpected payload: dim={len(embedding) if embedding else 0}")
     return embedding
 
 
@@ -317,7 +313,7 @@ def ingest(input_path, book, translator, chapter, db_path, verbose=False, replac
 
     prelude_text = ""
     first_verse_text = ""
-    for vs, ve, body in verses:
+    for vs, _ve, body in verses:
         if vs == 0:
             prelude_text = body
         elif first_verse_text == "" and vs == 1:
@@ -328,21 +324,25 @@ def ingest(input_path, book, translator, chapter, db_path, verbose=False, replac
 
     chunks = []
     if summary_text:
-        chunks.append({
-            "text": summary_text,
-            "verse_start": 1,
-            "verse_end": 1,
-            "chunk_level": "chapter",
-        })
+        chunks.append(
+            {
+                "text": summary_text,
+                "verse_start": 1,
+                "verse_end": 1,
+                "chunk_level": "chapter",
+            }
+        )
     for vs, ve, body in verses:
         if vs == 0:
             continue
-        chunks.append({
-            "text": body,
-            "verse_start": vs,
-            "verse_end": ve,
-            "chunk_level": "verse",
-        })
+        chunks.append(
+            {
+                "text": body,
+                "verse_start": vs,
+                "verse_end": ve,
+                "chunk_level": "verse",
+            }
+        )
 
     chunks = _expand_oversize_chunks(chunks)
 
@@ -384,7 +384,9 @@ def ingest(input_path, book, translator, chapter, db_path, verbose=False, replac
         new_metas.append(meta)
 
         if verbose:
-            print(f"  add  {chunk_id[:10]}  {meta['ref_id']:24s}  tokens={meta['token_count']:4d}  entities={meta['entities']}")
+            print(
+                f"  add  {chunk_id[:10]}  {meta['ref_id']:24s}  tokens={meta['token_count']:4d}  entities={meta['entities']}"
+            )
 
     if new_ids:
         collection.add(

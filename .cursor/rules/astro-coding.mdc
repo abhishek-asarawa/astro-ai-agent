@@ -1,0 +1,15 @@
+---
+description: Python coding and comment standards for this repo
+globs:
+  - "**/*.py"
+alwaysApply: false
+---
+
+# Python coding standards
+
+When editing Python files, follow:
+
+- [docs/standards/coding.md](../../docs/standards/coding.md)
+- [docs/standards/comments.md](../../docs/standards/comments.md)
+
+Do not invent local conventions that conflict with those docs.

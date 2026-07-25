@@ -7,7 +7,7 @@ exceeds the cap, a one-shot llama3.2:3b summarisation call compresses it.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from astro_agent.rag import config as cfg
 
@@ -28,7 +28,7 @@ class ConversationBuffer:
     def add(self, user_msg: str, assistant_msg: str) -> None:
         self._turns.append((user_msg, assistant_msg.strip()))
         if len(self._turns) > self.max_turns:
-            self._turns = self._turns[-self.max_turns:]
+            self._turns = self._turns[-self.max_turns :]
 
     def clear(self) -> None:
         self._turns.clear()
@@ -70,19 +70,20 @@ def make_summarize_fn(
     """Return a one-shot summariser backed by ``query_ollama_once``."""
 
     def _summarize(context_text: str) -> str:
+        from astro_agent.llm import config as llm_cfg
         from astro_agent.llm.client import query_ollama_once  # lazy: avoid circular import
 
         prompt = (
-            "Summarise the following Vedic astrology conversation in under 150 words, "
+            f"Summarise the following Vedic astrology conversation in under {llm_cfg.SUMMARY_MAX_WORDS} words, "
             "keeping key astrological insights and follow-up questions:\n\n"
             f"{context_text}"
         )
         return query_ollama_once(
             prompt,
-            temperature=0.0,
+            temperature=llm_cfg.SUMMARIZE_TEMPERATURE,
             timeout_s=timeout_s,
             model_name=model_name,
-            num_ctx=4096,
+            num_ctx=llm_cfg.SUMMARIZE_NUM_CTX,
         )
 
     return _summarize

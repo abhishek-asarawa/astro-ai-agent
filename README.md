@@ -1,23 +1,27 @@
 # Astro AI Agent
 
-Local Vedic astrology analysis pipeline with structured chart features and Ollama-based prediction/evaluation.
+Local Vedic astrology analysis pipeline with structured chart features, RAG over classical texts, and Ollama-based generation.
 
 ## Quick Start
 
 ```bash
-source venv/bin/activate
-```
-
-```bash
-python astro_engine.py --model qwen2.5:7b-instruct --timeout 120
-```
-
-```bash
-python evaluate_career.py --eval-type career --runs 1 --model qwen2.5:7b-instruct --timeout 120 --workers 2 --output career_eval_report.json --history eval_history.json
-```
-
-```bash
+# Create .venv311 once — see Setup §2
+source .venv311/bin/activate
 streamlit run app.py
+```
+
+CLI chart + query (optional):
+
+```bash
+python -m astro_agent.llm.client --model qwen2.5:7b-instruct --timeout 120
+```
+
+Career / RAG / intent evals:
+
+```bash
+python evals/evaluate_career.py --eval-type career --runs 1 --model qwen2.5:7b-instruct --timeout 120 --workers 2
+python evals/evaluate_rag.py
+python evals/evaluate_real_world_questions.py
 ```
 
 ## Setup
@@ -33,21 +37,33 @@ ollama pull nomic-embed-text       # embedding model for RAG
 
 ### 2. Install Python dependencies
 
+CI runs Python 3.11, and the pre-push gate requires 3.11 or newer.
+
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+brew install python@3.11
+/opt/homebrew/opt/python@3.11/bin/python3.11 -m venv .venv311
+source .venv311/bin/activate
+pip install -r requirements-dev.txt
+pip install -e .
 ```
 
-### 3. (Optional) Build the RAG corpus index
+### 2b. Install git hooks (once per clone)
 
-RAG retrieval requires a local ChromaDB index. Without it the app still works but answers are ungrounded. To build the index, ingest your BPHS corpus files:
+```bash
+./scripts/install-hooks.sh
+```
+
+This points git at `.githooks/`: commits run the fast lint gate, pushes run the
+full CI-equivalent gate (ruff, mypy, pytest), so PR checks hold no surprises.
+Activate `.venv311` before commit/push so the hooks find Python 3.11 tooling.
+
+### 3. (Optional) Build the RAG corpus index
 
 ```bash
 python scripts/ingest_bphs_from_full_pdf_dir.py --dir data/corpus/
 ```
 
-The index is written to `chroma_db/` (gitignored).
+The index is written to `chroma_db/` (gitignored). Without it the app still works but answers are ungrounded.
 
 ### 4. Configure environment (optional)
 
@@ -56,372 +72,75 @@ cp .env.example .env
 # Edit .env to override model, timeout, and feature flags
 ```
 
+## Standards & specs (for contributors and agents)
+
+- Coding / comments / testing / config: [`docs/standards/`](docs/standards/)
+- Business feature specs (no code): [`docs/specs/`](docs/specs/)
+- Portable agent entrypoint: [`AGENTS.md`](AGENTS.md)
+- Multi-book corpus engineering path: [`docs/CORPUS_PATH.md`](docs/CORPUS_PATH.md)
+
 ## Project Overview
 
-This project has two main flows:
+Main surfaces:
 
-- `astro_engine.py`: builds chart features and runs a career prediction query on a local Ollama model.
-- `evaluate_career.py`: runs benchmark evaluations (baseline vs enriched prompts), scores outputs, and applies smart retention for historical best results.
+- **Streamlit UI** (`app.py`): thin chat UI over `astro_agent.service.run_consultation`
+- **Consultation service** (`astro_agent/service/`): chart → intent → agent/RAG/linear → humanize
+- **Package** (`astro_agent/`): chart math, routing, RAG, LLM client, optional ReAct agent loop
+- **Evals** (`evals/`): career, RAG, intent, real-world quality gates
+
+## Package layout
+
+```
+astro_agent/
+  chart/          # Swiss Ephemeris features, dashas, timing
+  routing/        # hybrid intent detection
+  intents.py      # single source of truth for intents + keyword banks
+  rag/            # ingest, hybrid search, citation inject
+  llm/            # Ollama client, prompts, conversation, humanizer, config
+  agent/          # ReAct loop + tool registry (agent/tools/)
+  service/        # run_consultation orchestration
+  utils/          # cities, tracer, response parse, confidence
+prompts/          # deprecated shim → astro_agent.llm.prompts
+```
 
 ## Intent-Aware Routing
 
-The Streamlit app now detects user intent from the question and routes to one domain prompt.
-
-- Supported intents: `career`, `health`, `wealth`, `family`, `general`
-- Detection strategy: hybrid (`rule-based` first, `LLM fallback` when ambiguous)
-- Multi-intent behavior: single-best intent is selected (one domain response per query)
-- Fallback safety: if detection/classification is unclear, app falls back to `general`
+- Supported intents: `career`, `health`, `wealth`, `family`, `general` (see `astro_agent.intents`)
+- Detection: hybrid (rules first, LLM fallback when ambiguous)
+- Single-best intent per query; unclear cases fall back to `general`
 
 ## Architecture
 
-### 1) Chart + Prompt Pipeline (`astro_engine.py`)
+1. **Chart** — birth details (IST) → Swiss Ephemeris → lagna/planets/lords/yogas/dashas/timing
+2. **Intent** — `detect_intent` in `astro_agent.routing.intent_router`
+3. **Answer path** — optional agent tools (`run_agent_loop`) or RAG-enriched / plain domain prompts via `run_consultation`
+4. **Generation** — Ollama `/api/generate` (linear) or `/api/chat` (agent tools)
+5. **Post-process** — citation strip, confidence calibrate, humanize for chat display
 
-- Input: birth details in IST (`year`, `month`, `day`, `hour`, `minute`, `city`)
-- Time conversion: `convert_ist_to_utc` from `utils.py`
-- Astronomical computation: Swiss Ephemeris (`swisseph`)
-- Feature mapping:
-  - `mapper.py`: rashi/nakshatra mapping
-  - `lords.py`: house lordships
-  - `yogas.py`: planetary dignity tags
-  - `dashas.py`: Vimshottari dasha timeline
-- Prompt assembly: structured, career-focused format
-- Inference: Ollama generate API
+## Evaluation
 
-### 2) Evaluation Pipeline (`evaluate_career.py`)
-
-- Runs two prompt modes for each test case:
-  - `baseline`
-  - `enriched`
-- Executes jobs in parallel (`--workers`)
-- Scores:
-  - `keyword_score` (expected keyword coverage)
-  - `template_score` (format adherence for enriched responses)
-- Summary metrics:
-  - `baseline_keyword_avg`
-  - `enriched_keyword_avg`
-  - `enriched_template_avg`
-  - `delta_keyword_avg`
-
-### 3) Smart Result Retention
-
-Evaluation history is persisted with a quality gate:
-
-1. If no past history: save result.
-2. If past history exists: save only when guardrails pass:
-   - new `enriched_keyword_avg` is higher than best historical record
-   - new `enriched_template_avg` is not lower than the best historical record
-3. Keep at most 3 accepted history records.
-4. If full and a new accepted record arrives:
-   - identify least-good records
-   - evict the **oldest** among those least-good records
-
-History is global (all eval types/models compared together).
-
-## Files
-
-- `astro_engine.py`: chart feature builder and Ollama query runtime
-- `evaluate_career.py`: evaluator, scoring, retention, and history logic
-- `evaluate_real_world_questions.py`: colloquial real-world question benchmark (intent + response quality)
-- `eval_scoring.py`: shared keyword-coverage scoring for evaluators
-- `data/golden/real_world_questions_v0.json`: 28 BPHS-scoped real-world golden cases
-- `data/golden/schema.py`: `GoldenCase` validation for golden JSON files
-- `FUTURE_IMPROVEMENTS.md`: deferred corpus expansion, intent split, and backlog
-- `eval_history.json`: accepted history index (created after accepted runs)
-- `eval_records/`: accepted report snapshots (created after accepted runs)
-- `career_eval_report.json`: latest run output file (default)
-- `data/golden/rag_eval_v0.json`: hand-labeled retrieval **golden** cases (committed)
-
-## Setup
-
-Use project venv Python:
-
-```bash
-source venv/bin/activate
-```
+- `evals/evaluate_career.py` — baseline vs enriched prompts, keyword + template scores, smart retention
+- `evals/evaluate_rag.py` — retrieval gold/silver
+- `evals/evaluate_real_world_questions.py` — colloquial question benchmark
+- Golden data under `data/golden/`
 
 ## Commands
 
-### Run interactive UI (Streamlit)
+### Run interactive UI
 
-Prerequisites:
-
-- Activate venv (`source venv/bin/activate`)
-- Ensure Ollama is running locally on `http://localhost:11434`
-
-Launch:
+Prerequisites: `.venv311` activated; Ollama running (default `http://localhost:11434`, overridable via `ASTRO_OLLAMA_HOST`).
 
 ```bash
 streamlit run app.py
 ```
 
-Typical UI flow:
+### Quality gate
 
-1. Set birth date, birth time, and city.
-2. Enter what you are looking for in the question box.
-3. (Optional) Override model and timeout.
-4. Click `Generate Analysis` to view model output, dasha snapshot, chart details, and detected intent metadata.
-
-### Run one prediction
+Local hooks and GitHub Actions run the same script:
 
 ```bash
-python astro_engine.py \
-  --year 1998 --month 9 --day 27 --hour 13 --minute 0 --city delhi \
-  --question "What is the professional outlook for this chart?" \
-  --model qwen2.5:7b-instruct \
-  --timeout 120
+./scripts/run_ci_checks.sh fast   # ruff lint + format check (pre-commit)
+./scripts/run_ci_checks.sh full   # + mypy + ASTRO_CI=1 pytest (pre-push, CI)
 ```
 
-Optional:
-
-- `--no-preview` to skip prompt preview.
-
-### Run evaluation (single quick pass)
-
-```bash
-python evaluate_career.py \
-  --eval-type career \
-  --runs 1 \
-  --model qwen2.5:7b-instruct \
-  --timeout 120 \
-  --workers 2 \
-  --output career_eval_report.json \
-  --history eval_history.json
-```
-
-### Run intent detection evaluation
-
-```bash
-python evaluate_intent_detection.py \
-  --model qwen2.5:7b-instruct \
-  --timeout 120 \
-  --output intent_detection_eval_report.json
-```
-
-### Run intent routing evaluation (end-to-end)
-
-```bash
-python evaluate_intent_routing.py \
-  --model qwen2.5:7b-instruct \
-  --timeout 120 \
-  --workers 2 \
-  --output intent_routing_eval_report.json
-```
-
-### Run real-world questions evaluation
-
-Colloquial first-person questions scoped to what **BPHS Vol.1** can ground (see [FUTURE_IMPROVEMENTS.md](FUTURE_IMPROVEMENTS.md) for deferred dosha/remedy/matching categories).
-
-```bash
-python evaluate_real_world_questions.py \
-  --model qwen2.5:7b-instruct \
-  --timeout 120 \
-  --workers 2
-```
-
-Report is written to `eval_records/real_world_eval_<timestamp>.json`. Key metrics:
-
-- `intent_accuracy` — overall routing correctness vs golden labels
-- `intent_accuracy_per_domain` — career / health / wealth / family / general breakdown
-- `intent_accuracy_per_tag` — e.g. `marriage`, `education`, `india_trending` (Phase 2 gating signal)
-- `intent_accuracy_india_trending` vs `intent_accuracy_generic`
-- `keyword_avg`, `template_avg`, `fallback_rate`
-
-Golden cases: [data/golden/real_world_questions_v0.json](data/golden/real_world_questions_v0.json) (28 cases).
-
-Fast routing-only unit tests (no Ollama):
-
-```bash
-python -m pytest tests/test_intent_routing_real_world.py -q
-```
-
-### Stable benchmark run (recommended)
-
-```bash
-python evaluate_career.py \
-  --eval-type career \
-  --runs 3 \
-  --model qwen2.5:7b-instruct \
-  --timeout 600 \
-  --workers 2 \
-  --output career_eval_report.json \
-  --history eval_history.json
-```
-
-## Configuration
-
-CLI overrides environment variables. Priority: **CLI > env > defaults**.
-
-All supported env vars are documented in `.env.example` at the repo root. Copy it to `.env` and adjust values as needed.
-
-Example:
-
-```bash
-export ASTRO_MODEL_NAME=qwen2.5:7b-instruct
-export ASTRO_OLLAMA_TIMEOUT_S=240
-python evaluate_career.py --runs 2 --workers 2
-```
-
-## Output Interpretation
-
-Read `summary` in `career_eval_report.json`:
-
-- `delta_keyword_avg > 0`: enriched prompt beats baseline on keyword metric
-- `enriched_template_avg` close to `1.0`: model follows required response format well
-
-Also check `save_decision` to see whether this run was accepted into history.
-
-## Phase 4: RAG v0 (Classical Text Retrieval)
-
-A local-first RAG layer that grounds answers in classical Vedic astrology
-texts (BPHS, Sharma translation) with verifiable `[ref:...]` citations.
-Optimized for an M1 Pro 16 GB budget: heuristic reranker (no cross-encoder),
-`nomic-embed-text` embeddings via Ollama with `keep_alive=0` so the embedding
-model is evicted between calls, and ChromaDB on local SQLite.
-
-### Components
-
-- `rag_config.py` — single source of truth for embed model, Chroma path,
-  chunking targets, reranker weights, house→chapter hints for BPHS “effects”
-  chapters, and entity / intent regex banks.
-- `knowledge_builder.py` — idempotent ingest CLI: cleans OCR artifacts,
-  splits a chapter into verse-level chunks (+ one chapter-summary chunk),
-  tags entities and intents, embeds, and upserts. SHA-256 chunk IDs make
-  re-runs free.
-- `rag_search.py` — multi-query expansion (literal question + structural
-  chart query + intent-keyword query + targeted variants e.g. Navamsa / 11th
-  wealth), intent-filtered Chroma dense search, optional **BM25 + RRF** fusion,
-  dedupe by `ref_id` (best dense slice per citation), heuristic rerank with
-  pre-order trust, house-chapter hints, Navamsa alignment, and capped BM25-only
-  pseudo-similarity scores.
-- `evaluate_rag.py` — runs [`data/golden/rag_eval_v0.json`](data/golden/rag_eval_v0.json)
-  (hand-labeled cases, including **Ch. 33 / 34 / 36** general topics) through
-  the retriever with production `intent_router.detect_intent()` by default.
-  Scores `rag_recall_at_3_gold`, `rag_recall_at_5_silver`, and
-  `rag_heuristic_delta`; summary includes **`outcomes_checksum`** (SHA-256 over
-  per-case pass/fail, deltas, and post/pre top-5 ref lists). **Retention**
-  compares runs lexicographically on
-  `(gold, silver, heuristic_delta)`, then breaks ties with the checksum (see
-  [`RAG_PLAN.md`](RAG_PLAN.md)). Writes optional history to `rag_eval_history.json`.
-
-### Chunk schema (Chroma metadata)
-
-```
-book              "bphs"
-translator        "sharma"
-chapter           23
-verse_start       2
-verse_end         2          // == verse_start for single verses; >start for blocks
-chunk_level       "verse" | "chapter"
-ref_id            "bphs-ch23-v2" | "bphs-ch23-v8-10" | "bphs-ch23-summary"
-entities          "|10th_lord|exaltation|own_sign|"   // |-bounded for safe substring
-token_count       317
-intent_career     true
-intent_wealth     false
-intent_health     false
-intent_family     false
-intent_general    true       // true if any specific intent fires
-```
-
-Chunk IDs are `sha256(text)` so the same text never re-embeds.
-
-### Pre-flight
-
-```bash
-ollama pull nomic-embed-text
-# (Optional, recommended) hint Ollama to share VRAM with DeepSeek-R1:
-launchctl setenv OLLAMA_MAX_LOADED_MODELS 2
-launchctl setenv OLLAMA_NUM_PARALLEL 1
-```
-
-### Ingest a chapter
-
-```bash
-python knowledge_builder.py \
-  --input data/corpus/bphs_sharma/ch_23_effects_of_10_house.txt \
-  --book bphs --translator sharma --chapter 23 \
-  --verbose
-```
-
-Output: `Ingested N new chunks, skipped M already present.` Re-running with
-the same input is a no-op.
-
-### Evaluate retrieval
-
-```bash
-python evaluate_rag.py \
-  --golden data/golden/rag_eval_v0.json \
-  --output rag_eval_report.json \
-  --history rag_eval_history.json
-```
-
-Quality targets (adjust as your golden set grows; current file has **30** cases):
-
-- `rag_recall_at_3_gold >= 0.6` was the original v0 bar on a small set; full-book
-  tuning aims for **1.0** on the maintained goldens when the index is complete.
-- `rag_recall_at_5_silver >= 0.8` — silver refs in post-rerank top-5.
-- `rag_heuristic_delta > 0` — on average, reranking moves gold refs up vs the
-  pre-rerank pool (see `evaluate_rag.py`).
-
-**Smart retention** (see `evaluate_rag.py::passes_guardrails`):
-
-1. Baseline = best historical record by lexicographic
-   `(rag_recall_at_3_gold, rag_recall_at_5_silver, rag_heuristic_delta)`.
-2. A run **improves** if that tuple is strictly greater; **regresses** if strictly
-   lower.
-3. If the tuple **ties**, compare **`outcomes_checksum`** (per-case outcomes).
-   Different checksum ⇒ accept (same headline metrics, retrieval behavior
-   changed). Equal checksum ⇒ still accept to **rotate** rolling snapshots.
-   Legacy history rows without checksum compare as tie → accept.
-4. Up to **3** records in `rag_eval_history.json`; when full, evict the **weakest**
-   tuple, then **oldest** among ties (`evaluate_rag.py::apply_retention`).
-5. Accepted reports are copied under `rag_eval_records/` (local only).
-
-`rag_eval_report.json`, `rag_eval_history.json`, and `rag_eval_records/` are
-**gitignored**; regenerate with `evaluate_rag.py` after changing retrieval or the
-golden file.
-
-### Phase 4 PR1: RAG-enriched generation
-
-PR1 wires retrieval into generation so outputs can cite classical BPHS chunks
-using verified `[ref:...]` tags.
-
-Enable RAG in CLI:
-
-```bash
-python astro_engine.py \
-  --question "What is the professional outlook for this chart?" \
-  --rag-on
-```
-
-Compare baseline/enriched/rag_enriched in evaluator:
-
-```bash
-python evaluate_career.py --rag --runs 2
-```
-
-What changes in prompts:
-
-- A `ClassicalReferences:` block is injected before `Question:`.
-- References are inserted as `[ref:<ref_id>]: <chunk text>`.
-- A `CitationRules:` block instructs the model to use only provided tags.
-
-Reference validation:
-
-- Non-streaming calls (`query_ollama_once`) strip unknown fabricated `[ref:...]`
-  tags post-generation.
-- Streaming CLI keeps live token UX and prints a footer with stripped tag stats.
-
-PR1 acceptance target:
-
-- `rag_enriched_keyword_avg >= enriched_keyword_avg`
-- In 5/5 sampled outputs, at least one valid `[ref:...]` appears and fabricated
-  tags are stripped.
-
-## Notes
-
-- `NotOpenSSLWarning` from `urllib3` can appear on macOS with LibreSSL; it is usually a warning, not a functional failure.
-- Large models and high worker counts can cause slow or empty responses. Reduce `--workers` or increase `--timeout` if needed.
-- The corpus directory (`data/corpus/`) and the Chroma store (`chroma_db/`)
-  are gitignored. Re-run `knowledge_builder.py` after a fresh checkout.
-- For retrieval tuning defaults, rerank bonuses, and operational notes, see
-  [`RAG_PLAN.md`](RAG_PLAN.md).
+Bypass only in emergencies with `git push --no-verify`; CI will still fail.

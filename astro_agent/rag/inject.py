@@ -1,10 +1,11 @@
 """RAG prompt injection and citation stripping."""
+
 import re
 
-from astro_agent.rag import config as cfg
-from astro_agent.rag import search as rag_search
 from astro_agent.chart.engine import _house_number_from_lagna_and_sign
 from astro_agent.llm.prompts.builder import build_prompt_for_intent
+from astro_agent.rag import config as cfg
+from astro_agent.rag import search as rag_search
 
 REF_TAG_RE = re.compile(r"\[ref:([^\]]+)\]")
 
@@ -39,11 +40,11 @@ def _rag_citation_template_labels(intent):
     else:
         key = (intent or "general").strip().lower() or "general"
     labels = {
-        "career": ("CareerSummary", "CareerRisk", "CareerOpportunity"),
-        "health": ("HealthSummary", "HealthRisk", "HealthOpportunity"),
-        "wealth": ("WealthSummary", "WealthRisk", "WealthOpportunity"),
-        "family": ("FamilySummary", "FamilyRisk", "FamilyOpportunity"),
-        "general": ("OverallSummary", "OverallRisk", "OverallOpportunity"),
+        "career": ("CareerSummary", "CareerRisk", "CareerOpportunity", "CareerRemedies"),
+        "health": ("HealthSummary", "HealthRisk", "HealthOpportunity", "HealthRemedies"),
+        "wealth": ("WealthSummary", "WealthRisk", "WealthOpportunity", "WealthRemedies"),
+        "family": ("FamilySummary", "FamilyRisk", "FamilyOpportunity", "FamilyRemedies"),
+        "general": ("OverallSummary", "OverallRisk", "OverallOpportunity", "OverallRemedies"),
     }
     return labels.get(key, labels["general"])
 
@@ -65,20 +66,22 @@ def _render_rag_block(chunks, max_tokens, intent=None):
         allowed_refs.add(chunk.ref_id)
         lines.append(f"[ref:{chunk.ref_id}]: {text}")
 
-    summary_l, risk_l, opp_l = _rag_citation_template_labels(intent)
-    template_hint = f"{summary_l}/Evidence/{risk_l}/{opp_l}/Confidence"
+    summary_l, risk_l, opp_l, remedies_l = _rag_citation_template_labels(intent)
+    template_hint = f"{summary_l}/Evidence/{risk_l}/{opp_l}/{remedies_l}/Confidence"
     allowed_list = ", ".join(f"[ref:{ref_id}]" for ref_id in sorted(allowed_refs))
-    lines.extend([
-        "",
-        "CitationRules:",
-        f"- Keep the exact response template unchanged ({template_hint}).",
-        "- Every Evidence bullet MUST end with at least one [ref:...] tag from ClassicalReferences.",
-        "- Include at least 2 Evidence bullets that each cite a reference.",
-        "- Use ONLY the [ref:...] tags listed above. Do NOT invent any [ref:...] tag or verse.",
-        "- If a claim cannot be supported by the listed refs, omit that claim.",
-        "- Citation format example: - Saturn in the 10th may delay rise but supports perseverance [ref:bphs-ch23-v11]",
-        f"- AllowedRefTags: {allowed_list}",
-    ])
+    lines.extend(
+        [
+            "",
+            "CitationRules:",
+            f"- Keep the exact response template unchanged ({template_hint}).",
+            "- Every Evidence bullet MUST end with at least one [ref:...] tag from ClassicalReferences.",
+            "- Include at least 2 Evidence bullets that each cite a reference.",
+            "- Use ONLY the [ref:...] tags listed above. Do NOT invent any [ref:...] tag or verse.",
+            "- If a claim cannot be supported by the listed refs, omit that claim.",
+            "- Citation format example: - Saturn in the 10th may delay rise but supports perseverance [ref:bphs-ch23-v11]",
+            f"- AllowedRefTags: {allowed_list}",
+        ]
+    )
     return "\n".join(lines), allowed_refs, included
 
 
@@ -88,7 +91,9 @@ def append_classical_references_block(base_prompt, chunks, intent):
     if not chunks:
         return base_prompt, set(), [], False
     rag_block, allowed_refs, included = _render_rag_block(
-        chunks, max_tokens=cfg.MAX_CONTEXT_TOKENS_TOTAL, intent=resolved_intent,
+        chunks,
+        max_tokens=cfg.MAX_CONTEXT_TOKENS_TOTAL,
+        intent=resolved_intent,
     )
     if not allowed_refs:
         return base_prompt, set(), [], False
@@ -124,9 +129,7 @@ def _strip_unknown_refs(text, allowed_refs):
 
 def build_rag_enriched_prompt(features, user_question, intent, prior_context=None):
     resolved_intent = (intent or "general").strip().lower() or "general"
-    base_prompt = build_prompt_for_intent(
-        features, user_question, resolved_intent, prior_context=prior_context
-    )
+    base_prompt = build_prompt_for_intent(features, user_question, resolved_intent, prior_context=prior_context)
     chart_facts = _features_to_chart_facts(features)
 
     try:
@@ -156,7 +159,9 @@ def build_rag_enriched_prompt(features, user_question, intent, prior_context=Non
         }
 
     rag_block, allowed_refs, included = _render_rag_block(
-        retrieved, max_tokens=cfg.MAX_CONTEXT_TOKENS_TOTAL, intent=resolved_intent,
+        retrieved,
+        max_tokens=cfg.MAX_CONTEXT_TOKENS_TOTAL,
+        intent=resolved_intent,
     )
     if not allowed_refs:
         return {

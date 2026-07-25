@@ -2,39 +2,29 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import time
 import uuid
 
 import requests
 import streamlit as st
 
-from astro_agent.llm.client import (
-    _call_ollama,
-    build_chart_features,
-    query_ollama_once,
-    resolve_ollama_config,
-)
-from astro_agent.rag.inject import _strip_unknown_refs, build_rag_enriched_prompt
-from astro_agent.llm.prompts.builder import build_prompt_for_intent
-from astro_agent.agent.loop import run_agent_loop
-from astro_agent.llm.conversation import ConversationBuffer, make_summarize_fn
-from astro_agent.routing.intent_router import detect_intent
-from astro_agent.rag import config as cfg
-from astro_agent.llm.prompts.schema import domain_response_json_schema
-from astro_agent.utils.response_sections import format_chat_answer_markdown, parse_structured_answer
-from astro_agent.utils.text_utils import extract_ref_ids, format_consumer_text, strip_reasoning_blocks
-from astro_agent.utils.cities import CITY_COORDINATES, CityResolutionError
-from astro_agent.utils.tracer import trace_feedback, trace_interaction
+from astro_agent.llm import config as llm_cfg
+from astro_agent.llm.client import _call_ollama
+from astro_agent.llm.conversation import ConversationBuffer
+from astro_agent.service.consultation import ConsultationRequest, run_consultation
+from astro_agent.utils.cities import CITY_COORDINATES
+from astro_agent.utils.response_sections import format_chat_answer_fallback, parse_structured_answer
+from astro_agent.utils.text_utils import extract_ref_ids
+from astro_agent.utils.tracer import trace_feedback
 
 
 def run_ollama_ui_query_stream(prompt, model_name=None, timeout_s=None):
     """Yield streaming text chunks and return final error code."""
     try:
-        requests.get("http://localhost:11434/api/tags", timeout=(2, 3))
+        requests.get(llm_cfg.OLLAMA_TAGS_URL, timeout=(2, 3))
         response, _ = _call_ollama(
             prompt,
             stream=True,
-            temperature=0.2,
+            temperature=llm_cfg.DEFAULT_TEMPERATURE,
             timeout_s=timeout_s,
             model_name=model_name,
         )
@@ -78,29 +68,11 @@ def _chunk_value(chunk, key, default=None):
     return default
 
 
-def _chunks_to_serializable(retrieved):
-    rows = []
-    for idx, chunk in enumerate(retrieved or [], start=1):
-        ref_id = _chunk_value(chunk, "ref_id", f"ref_{idx}")
-        similarity = _chunk_value(chunk, "similarity", None)
-        matched_entities = _chunk_value(chunk, "matched_entities", []) or []
-        chunk_text = (_chunk_value(chunk, "text", "") or "").strip()
-        rows.append(
-            {
-                "ref_id": ref_id,
-                "similarity": float(similarity) if similarity is not None else None,
-                "matched_entities": list(matched_entities),
-                "text": chunk_text,
-            }
-        )
-    return rows
-
-
 def _display_body_for_message(msg: dict) -> str:
     if msg.get("displayed_answer"):
         return msg["displayed_answer"]
     parsed = parse_structured_answer(msg.get("content") or "")
-    return format_chat_answer_markdown(parsed, msg.get("content") or "")
+    return format_chat_answer_fallback(parsed, msg.get("content") or "")
 
 
 def _render_assistant_in_chat(msg: dict, *, show_feedback: bool):
@@ -262,6 +234,9 @@ def _render_technical_practitioner_view(features: dict):
             if last_asst and last_asst.get("content"):
                 st.markdown("**Raw model output (last answer)**")
                 st.code(last_asst["content"], language="markdown")
+                calibrated = st.session_state.get("last_calibrated_confidence")
+                if calibrated is not None:
+                    st.caption(f"Model confidence (internal): {calibrated}/100")
 
 
 def _init_session_defaults():
@@ -293,6 +268,8 @@ def _init_session_defaults():
         st.session_state.last_model = ""
     if "last_intent" not in st.session_state:
         st.session_state.last_intent = "general"
+    if "last_calibrated_confidence" not in st.session_state:
+        st.session_state.last_calibrated_confidence = None
     if "agent_rag_enabled" not in st.session_state:
         st.session_state.agent_rag_enabled = True
     if "agent_loop_enabled" not in st.session_state:
@@ -355,6 +332,7 @@ def _render_sidebar():
 
 
 def main():
+    """Streamlit entry: birth form, chat, and sidebar settings over run_consultation."""
     st.set_page_config(page_title="Astro AI Agent", page_icon="🔭", layout="wide")
     _init_session_defaults()
     _render_sidebar()
@@ -401,202 +379,89 @@ def main():
         agent_loop_enabled = bool(request_data.get("agent_loop_enabled", False))
         model_input = request_data["model_input"]
         timeout_input = request_data["timeout_input"]
-        request_started = time.perf_counter()
 
         model_override = model_input.strip() or None
-        resolved_model, resolved_timeout, resolved_num_ctx = resolve_ollama_config(
-            model_name=model_override,
-            timeout_s=int(timeout_input),
-        )
-
-        intent_info = {
-            "intent": "general",
-            "method": "rules_fallback",
-            "confidence": 0.0,
-            "rule_scores": {},
-        }
-        prompt = ""
-        rag_bundle = None
-        agent_result = None
-        features = None
-        final_answer = ""
-        error_code = None
 
         try:
-            _summarize_fn = make_summarize_fn(timeout_s=min(30, resolved_timeout))
-            prior_context = st.session_state.conversation_buffer.get_prior_context(
-                summarize_fn=_summarize_fn
-            )
+            stream_ph = st.empty()
+
+            def _stream_with_preview(prompt, model_name, timeout_s):
+                """Stream tokens into the UI while yielding to the consultation service."""
+                accumulated = ""
+                for text_chunk, possible_error in run_ollama_ui_query_stream(
+                    prompt, model_name=model_name, timeout_s=timeout_s
+                ):
+                    if possible_error:
+                        yield text_chunk, possible_error
+                        return
+                    accumulated += text_chunk
+                    parsed_preview = parse_structured_answer(accumulated)
+                    preview_md = format_chat_answer_fallback(parsed_preview, accumulated)
+                    stream_ph.markdown(preview_md + "▌")
+                    yield text_chunk, None
 
             with st.spinner("Computing chart and querying model..."):
-                try:
-                    features = build_chart_features(
-                        birth_date.year,
-                        birth_date.month,
-                        birth_date.day,
-                        birth_time.hour,
-                        birth_time.minute,
-                        city_name,
-                    )
-                except CityResolutionError as exc:
-                    st.error(str(exc))
-                else:
-                    try:
-                        intent_info = detect_intent(
-                            question=cleaned_question,
-                            timeout_s=min(45, resolved_timeout),
-                        )
-                    except Exception as exc:
-                        print(f"[intent] detection failed ({exc}), falling back to general", flush=True)
-                        intent_info = {
-                            "intent": "general",
-                            "method": "rules_fallback",
-                            "confidence": 0.0,
-                            "rule_scores": {},
-                        }
-                    chosen_intent = intent_info.get("intent", "general")
+                result = run_consultation(
+                    ConsultationRequest(
+                        year=birth_date.year,
+                        month=birth_date.month,
+                        day=birth_date.day,
+                        hour=birth_time.hour,
+                        minute=birth_time.minute,
+                        city_name=city_name,
+                        question=cleaned_question,
+                        rag_enabled=rag_enabled,
+                        agent_loop_enabled=agent_loop_enabled,
+                        model_name=model_override,
+                        timeout_s=int(timeout_input),
+                        session_id=st.session_state.session_id,
+                        conversation_buffer=st.session_state.conversation_buffer,
+                        birth_date_iso=birth_date.isoformat(),
+                        birth_time_iso=birth_time.strftime("%H:%M"),
+                    ),
+                    stream_generate=None if agent_loop_enabled else _stream_with_preview,
+                )
+            stream_ph.empty()
 
-                    if agent_loop_enabled:
-                        agent_result = run_agent_loop(
-                            user_question=cleaned_question,
-                            features=features,
-                            intent=chosen_intent,
-                            model_name=resolved_model,
-                            timeout_s=resolved_timeout,
-                            num_ctx=resolved_num_ctx,
-                            rag_enabled=rag_enabled,
-                            prior_context=prior_context or None,
-                        )
-                    elif rag_enabled:
-                        rag_bundle = build_rag_enriched_prompt(
-                            features,
-                            cleaned_question,
-                            chosen_intent,
-                            prior_context=prior_context or None,
-                        )
-                        prompt = rag_bundle["prompt"]
-                    else:
-                        prompt = build_prompt_for_intent(
-                            features,
-                            cleaned_question,
-                            chosen_intent,
-                            prior_context=prior_context or None,
-                        )
-
-            if features is not None:
-                stream_ph = st.empty()
-                if agent_loop_enabled and agent_result is not None:
-                    final_answer = agent_result.get("answer", "") or ""
-                elif cfg.STRUCTURED_OUTPUT_ENABLED:
-                    with st.spinner("Generating structured response..."):
-                        raw = query_ollama_once(
-                            prompt,
-                            temperature=0.2,
-                            timeout_s=resolved_timeout,
-                            model_name=resolved_model,
-                            allowed_refs=rag_bundle.get("allowed_refs") if rag_bundle else None,
-                            num_ctx=resolved_num_ctx,
-                            response_format=domain_response_json_schema(),
-                        )
-                    if not raw:
-                        error_code = "request"
-                    else:
-                        final_answer = strip_reasoning_blocks(raw)
-                    stream_ph.empty()
-                else:
-                    with st.spinner("Generating response..."):
-                        for text_chunk, possible_error in run_ollama_ui_query_stream(
-                            prompt,
-                            model_name=resolved_model,
-                            timeout_s=resolved_timeout,
-                        ):
-                            if possible_error:
-                                error_code = possible_error
-                                break
-                            final_answer += text_chunk
-                            parsed_preview = parse_structured_answer(
-                                strip_reasoning_blocks(final_answer)
-                            )
-                            preview_md = format_chat_answer_markdown(
-                                parsed_preview, strip_reasoning_blocks(final_answer)
-                            )
-                            stream_ph.markdown(preview_md + "▌")
-                    final_answer = strip_reasoning_blocks(final_answer)
-                    stream_ph.empty()
-
-                if error_code == "connection":
-                    st.error("Could not connect to Ollama at `http://localhost:11434`. Start Ollama and retry.")
-                elif error_code == "timeout":
+            if not result.ok:
+                if result.error_code == "connection":
                     st.error(
-                        f"The request timed out after {resolved_timeout}s. "
+                        f"Could not connect to Ollama at `{llm_cfg.OLLAMA_HOST}`. Start Ollama and retry."
+                    )
+                elif result.error_code == "timeout":
+                    st.error(
+                        f"The request timed out after {timeout_input}s. "
                         "Try increasing timeout in Agent settings or using a smaller model."
                     )
-                elif error_code:
-                    st.error("Model call failed unexpectedly. Please retry.")
-                elif not final_answer.strip():
+                elif result.error_code == "city":
+                    st.error(result.error or "Could not resolve birth city.")
+                elif result.error_code == "empty":
                     st.warning(
                         "No response text was returned by Ollama. Try a smaller model, higher timeout, or restart Ollama."
                     )
                 else:
-                    if (
-                        not agent_loop_enabled
-                        and not cfg.STRUCTURED_OUTPUT_ENABLED
-                        and rag_enabled
-                        and rag_bundle
-                        and rag_bundle.get("allowed_refs")
-                    ):
-                        final_answer, _ = _strip_unknown_refs(
-                            final_answer, rag_bundle.get("allowed_refs")
-                        )
-
-                    parsed = parse_structured_answer(final_answer)
-                    displayed_answer = format_chat_answer_markdown(parsed, final_answer)
-                    interaction_id = uuid.uuid4().hex
-                    latency_ms = (time.perf_counter() - request_started) * 1000.0
-
-                    st.session_state.chat_history.append(
-                        {
-                            "role": "assistant",
-                            "content": final_answer,
-                            "interaction_id": interaction_id,
-                            "displayed_answer": displayed_answer,
-                        }
-                    )
-                    st.session_state.conversation_buffer.add(cleaned_question, final_answer)
-                    st.session_state.saved_birth = {
-                        "birth_date": birth_date,
-                        "birth_time": birth_time,
-                        "city_name": city_name,
+                    st.error(result.error or "Model call failed unexpectedly. Please retry.")
+            else:
+                st.session_state.chat_history.append(
+                    {
+                        "role": "assistant",
+                        "content": result.raw_answer,
+                        "interaction_id": result.interaction_id,
+                        "displayed_answer": result.displayed_answer,
                     }
-                    st.session_state.last_features = features
-                    st.session_state.last_question = cleaned_question
-                    st.session_state.last_prompt_preview = prompt or ""
-                    st.session_state.last_retrieved_rows = _chunks_to_serializable(
-                        (rag_bundle or {}).get("retrieved", [])
-                    )
-                    st.session_state.last_model = resolved_model
-                    st.session_state.last_intent = intent_info.get("intent", "general")
-
-                    ref_ids = extract_ref_ids(final_answer)
-                    trace_interaction(
-                        interaction_id=interaction_id,
-                        session_id=st.session_state.session_id,
-                        question=cleaned_question,
-                        raw_answer=final_answer,
-                        displayed_answer=displayed_answer,
-                        intent=intent_info.get("intent"),
-                        model=resolved_model,
-                        latency_ms=latency_ms,
-                        rag_enabled=rag_enabled,
-                        agent_loop=agent_loop_enabled,
-                        ref_ids=ref_ids,
-                        confidence_int=parsed.get("confidence_int"),
-                        parsed_ok=bool(parsed.get("parsed_ok")),
-                        birth_date_iso=birth_date.isoformat(),
-                        birth_time_iso=birth_time.strftime("%H:%M"),
-                        city_name=city_name,
-                        intent_method=intent_info.get("method"),
-                    )
+                )
+                st.session_state.saved_birth = {
+                    "birth_date": birth_date,
+                    "birth_time": birth_time,
+                    "city_name": city_name,
+                }
+                st.session_state.last_features = result.features
+                st.session_state.last_question = cleaned_question
+                st.session_state.last_prompt_preview = result.prompt or ""
+                st.session_state.last_retrieved_rows = result.retrieved_rows
+                st.session_state.last_model = result.model or ""
+                st.session_state.last_intent = result.intent_info.get("intent", "general")
+                st.session_state.last_calibrated_confidence = result.calibrated_confidence
 
         finally:
             st.session_state.is_processing = False

@@ -15,7 +15,6 @@ from astro_agent.chart.timing import (
 )
 from astro_agent.llm.prompts.builder import build_career_prompt
 
-
 ANCHOR = datetime.date(2026, 5, 31)
 
 

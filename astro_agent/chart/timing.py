@@ -312,9 +312,7 @@ def format_timing_context_block(report: dict[str, Any]) -> str:
     active_md = report.get("active_mahadasha") or {}
     active_ad = report.get("active_antardasha") or {}
     if active_md:
-        lines.append(
-            f"- ActiveMahadasha: {active_md.get('lord')} ({active_md.get('start')} to {active_md.get('end')})"
-        )
+        lines.append(f"- ActiveMahadasha: {active_md.get('lord')} ({active_md.get('start')} to {active_md.get('end')})")
     if active_ad:
         lines.append(
             f"- ActiveAntardasha: {active_ad.get('lord')} ({active_ad.get('start')} to {active_ad.get('end')})"
@@ -330,9 +328,7 @@ def format_timing_context_block(report: dict[str, Any]) -> str:
         lines.append("- TransitionsInWindow:")
         for tr in transitions:
             md_note = f" under {tr['mahadasha']} MD" if tr.get("mahadasha") else ""
-            lines.append(
-                f"  - {tr['type']} change to {tr['lord']} on {tr['date']}{md_note} (until {tr['end']})"
-            )
+            lines.append(f"  - {tr['type']} change to {tr['lord']} on {tr['date']}{md_note} (until {tr['end']})")
     else:
         lines.append("- TransitionsInWindow: none")
 

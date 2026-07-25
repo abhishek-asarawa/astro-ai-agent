@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fast lint/format gate. Full suite runs on push (see .githooks/pre-push).
+set -euo pipefail
+exec "$(git rev-parse --show-toplevel)/scripts/run_ci_checks.sh" fast
