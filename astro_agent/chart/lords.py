@@ -43,7 +43,7 @@ def get_house_lords(lagna_rashi: str) -> dict:
     except ValueError:
         raise ValueError(f"Invalid Rashi: {lagna_rashi}") from None
 
-    lordships = {
+    lordships: dict[str, list[int]] = {
         "Sun": [],
         "Moon": [],
         "Mars": [],

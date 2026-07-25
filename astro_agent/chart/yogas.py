@@ -36,7 +36,7 @@ def get_planetary_dignity(planet: str, rashi: str) -> list:
     Evaluates the basic dignity of a planet based on its sign.
     Returns a list of string tags (e.g., ["[EXALTED]"]).
     """
-    tags = []
+    tags: list[str] = []
 
     # Rahu and Ketu are shadows and skip standard dignity rules in this basic pass
     if planet in ["Rahu", "Ketu"]:
