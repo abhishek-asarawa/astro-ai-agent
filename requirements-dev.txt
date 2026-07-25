@@ -16,3 +16,4 @@ PyMuPDF>=1.23,<2
 # Linting and type checking (Phase 7 tooling)
 ruff>=0.4,<1
 mypy>=1.10,<2
+types-requests
