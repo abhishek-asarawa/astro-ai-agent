@@ -113,12 +113,34 @@ one container with host Ollama stopped to prove CI remains offline-safe.
 
 ### Dependency-cache verification
 
-Edit one source file only — not `requirements.txt`, `requirements-dev.txt`, or
-`pyproject.toml` — in one worktree, then rerun that worktree's printed
-`up -d --build app` command. In the build log, confirm the build reports the `pip install --no-cache-dir -r requirements-dev.txt` step as `CACHED`
+In one worktree, append a uniquely tagged probe line to one source file — not
+`requirements.txt`, `requirements-dev.txt`, or `pyproject.toml`:
+
+```bash
+echo "# smoke-cache-probe: $(date +%s)" >> astro_agent/__init__.py
+```
+
+Rerun that worktree's printed `up -d --build app` command. In the build log,
+confirm the build reports the `pip install --no-cache-dir -r requirements-dev.txt` step as `CACHED`
 rather than re-running it. That `CACHED` marker on the dependency-install layer
 is the proof the layer was reused, not rebuilt: only the three copied manifest
 files can invalidate it, because application source is bind-mounted at runtime and never copied into the image.
+
+Immediately after that check, restore only the probe line — before any other
+cleanup:
+
+```bash
+grep -v '^# smoke-cache-probe:' astro_agent/__init__.py > astro_agent/__init__.py.tmp
+mv astro_agent/__init__.py.tmp astro_agent/__init__.py
+git status --short
+```
+
+`git status --short` must print nothing: the probe line is the only change
+this procedure ever makes, and filtering it out by its unique marker restores
+the file exactly, without `git reset --hard` or `git checkout --`, either of
+which would also discard any other uncommitted change already sitting in that
+file. This keeps the worktree clean so the non-forced `git worktree remove`
+below succeeds without needing `--force`.
 
 After verification, run each printed `down` command, then explicitly remove the
 temporary worktrees and branches:

@@ -135,3 +135,40 @@ def test_documentation_describes_home_survival_and_loss_precisely() -> None:
     )
     for phrase in required_phrases:
         assert phrase in text
+
+
+def test_documentation_restores_cache_probe_before_worktree_removal() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    probe_command = 'echo "# smoke-cache-probe: $(date +%s)" >> astro_agent/__init__.py'
+    cached_marker = "reports the `pip install --no-cache-dir -r requirements-dev.txt` step as `CACHED`"
+    restore_filter = "grep -v '^# smoke-cache-probe:' astro_agent/__init__.py > astro_agent/__init__.py.tmp"
+    restore_move = "mv astro_agent/__init__.py.tmp astro_agent/__init__.py"
+    restore_check = "git status --short"
+    no_hard_reset = "without `git reset --hard` or `git checkout --`"
+    worktree_remove = "git worktree remove .worktrees/smoke-one"
+
+    for phrase in (
+        probe_command,
+        cached_marker,
+        restore_filter,
+        restore_move,
+        restore_check,
+        no_hard_reset,
+        worktree_remove,
+    ):
+        assert phrase in text
+
+    probe_index = text.index(probe_command)
+    cached_index = text.index(cached_marker)
+    restore_filter_index = text.index(restore_filter)
+    restore_move_index = text.index(restore_move)
+    worktree_remove_index = text.index(worktree_remove)
+
+    # The probe is added, confirmed cached, then explicitly restored before
+    # any worktree/branch cleanup runs -- never left for a forced removal.
+    assert probe_index < cached_index < restore_filter_index < restore_move_index < worktree_remove_index
+
+    # Cleanup must stay non-forced: the documented removal command has no
+    # trailing `--force` flag attached to it.
+    assert "git worktree remove .worktrees/smoke-one --force" not in text
+    assert "git worktree remove .worktrees/smoke-two --force" not in text
