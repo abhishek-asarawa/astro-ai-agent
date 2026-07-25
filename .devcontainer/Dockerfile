@@ -4,7 +4,9 @@ USER root
 
 # Build tools cover Python packages that do not provide a wheel for the host
 # architecture; curl supports explicit Ollama health checks.
-RUN apt-get update \
+# The base image's optional Yarn repository may outlive its bundled signing key.
+RUN rm -f /etc/apt/sources.list.d/yarn.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
