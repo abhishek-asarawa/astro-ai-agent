@@ -30,6 +30,7 @@
 **Files:**
 - Create: `.venv311/` (untracked, local only)
 - Modify: `.gitignore` (add `.venv311/`)
+- Modify: `pyproject.toml:3` (fix the invalid build backend)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -47,6 +48,16 @@ brew install python@3.11
 ```
 
 Expected: Homebrew installs it; `/opt/homebrew/opt/python@3.11/bin/python3.11` now exists.
+
+- [ ] **Step 2b: Fix the invalid build backend in `pyproject.toml`**
+
+`pip install -e .` currently fails with `BackendUnavailable: Cannot import 'setuptools.backends.legacy'` because that backend name does not exist. The canonical setuptools backend is `setuptools.build_meta`. Change line 3:
+
+```toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+```
 
 - [ ] **Step 3: Create and populate the 3.11 virtualenv**
 
@@ -82,9 +93,11 @@ Add this line to `.gitignore` (keep existing content):
 
 - [ ] **Step 6: Commit**
 
+Stage only these two files — the repo has untracked vendored files under `.cursor/`, so never use `git add -A`.
+
 ```bash
-git add .gitignore
-git commit -m "chore: ignore .venv311 python 3.11 dev environment"
+git add .gitignore pyproject.toml
+git commit -m "chore: fix setuptools build backend and ignore .venv311 dev env"
 ```
 
 ---
