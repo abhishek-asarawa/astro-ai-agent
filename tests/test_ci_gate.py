@@ -47,3 +47,32 @@ def test_fast_mode_passes_on_clean_tree():
     """The repo must stay lint-clean so the pre-commit hook is usable."""
     result = _run(["fast"])
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+HOOKS_DIR = REPO_ROOT / ".githooks"
+
+
+def test_hooks_exist_and_are_executable():
+    for name in ("pre-commit", "pre-push"):
+        hook = HOOKS_DIR / name
+        assert hook.exists(), f"missing hook {hook}"
+        assert os.access(hook, os.X_OK), f"{hook} is not executable"
+
+
+def test_pre_commit_runs_fast_mode():
+    body = (HOOKS_DIR / "pre-commit").read_text()
+    assert "run_ci_checks.sh" in body
+    assert "fast" in body
+
+
+def test_pre_push_runs_full_mode():
+    body = (HOOKS_DIR / "pre-push").read_text()
+    assert "run_ci_checks.sh" in body
+    assert "full" in body
+
+
+def test_install_hooks_script_sets_hooks_path():
+    installer = REPO_ROOT / "scripts" / "install-hooks.sh"
+    assert installer.exists()
+    assert os.access(installer, os.X_OK)
+    assert "core.hooksPath" in installer.read_text()
