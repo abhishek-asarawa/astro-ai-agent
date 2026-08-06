@@ -52,15 +52,15 @@ Install/refresh dev tooling in the active (or .venv311) environment:
 }
 
 run_ruff() {
-    step "ruff check astro_agent/ tests/"
-    "$PY" -m ruff check astro_agent/ tests/
-    step "ruff format --check astro_agent/ tests/"
-    "$PY" -m ruff format --check astro_agent/ tests/
+    step "ruff check astro_agent/ tests/ scripts/"
+    "$PY" -m ruff check astro_agent/ tests/ scripts/
+    step "ruff format --check astro_agent/ tests/ scripts/"
+    "$PY" -m ruff format --check astro_agent/ tests/ scripts/
 }
 
 run_mypy() {
-    step "mypy astro_agent/"
-    "$PY" -m mypy astro_agent/
+    step "mypy astro_agent/ scripts/"
+    "$PY" -m mypy astro_agent/ scripts/
 }
 
 run_pytest() {
