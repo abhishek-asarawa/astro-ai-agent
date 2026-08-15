@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Spec-driven development gate (`scripts/check_spec_gate.sh`): blocks commits/pushes/PRs that touch feature-surface code (routing, prompts, agent, intents, timing, dashas) without a `Spec:` trailer, a `docs/specs/` change, or a `Spec-Exempt:` trailer. Enforced by `.githooks/commit-msg` (per commit), `.githooks/pre-push` (full unpushed range), and a new `spec-gate` CI job (PRs, cannot be skipped with `--no-verify`). See `docs/superpowers/specs/2026-08-06-spec-driven-enforcement-design.md`.
 - `astro_agent/` package with domain sub-packages (`chart/`, `llm/`, `rag/`, `routing/`, `agent/`, `utils/`)
 - `evals/` directory consolidating all evaluation harnesses (`evaluate_*.py`, `eval_*.py`, `run_pr1_acceptance_watch.py`)
 - `docs/` directory with moved planning docs (`RAG_PLAN.md`, `AGENT_PROD_PLAN.md`, `FUTURE_IMPROVEMENTS.md`)

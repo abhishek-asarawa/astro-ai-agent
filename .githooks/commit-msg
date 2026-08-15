@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Spec-driven development gate: fast, single-commit check on the message
+# being written. Full unpushed range is re-checked in pre-push; CI is the
+# authoritative layer (see docs/superpowers/specs/2026-08-06-spec-driven-enforcement-design.md).
+set -euo pipefail
+exec "$(git rev-parse --show-toplevel)/scripts/check_spec_gate.sh" commit-msg "$1"

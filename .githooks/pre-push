@@ -1,4 +1,31 @@
 #!/usr/bin/env bash
-# Full CI-equivalent gate so PR checks hold no surprises.
+# Full CI-equivalent gate so PR checks hold no surprises, plus the
+# spec-driven development gate over the full range of commits being pushed
+# (commit-msg only sees one commit at a time; this catches multi-commit
+# pushes locally instead of leaving them to CI alone).
 set -euo pipefail
-exec "$(git rev-parse --show-toplevel)/scripts/run_ci_checks.sh" full
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+ZERO_SHA="0000000000000000000000000000000000000000"
+
+# git feeds "<local-ref> <local-sha> <remote-ref> <remote-sha>" lines on
+# stdin; read them before anything else (including run_ci_checks.sh) can
+# consume stdin.
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" = "$ZERO_SHA" ] && continue # deleting the remote ref
+
+    base="$remote_sha"
+    if [ "$remote_sha" = "$ZERO_SHA" ]; then
+        # New remote ref: no remote tip to diff against, fall back to the
+        # merge-base with the default branch.
+        base="$(git merge-base "$local_sha" origin/main 2>/dev/null || true)"
+        [ -z "$base" ] && base="$(git merge-base "$local_sha" origin/master 2>/dev/null || true)"
+        if [ -z "$base" ]; then
+            echo "[pre-push] Could not determine a base to diff '$local_ref' against; skipping local spec gate (CI will still enforce it)." >&2
+            continue
+        fi
+    fi
+
+    "$REPO_ROOT/scripts/check_spec_gate.sh" range "$base" "$local_sha"
+done
+
+exec "$REPO_ROOT/scripts/run_ci_checks.sh" full

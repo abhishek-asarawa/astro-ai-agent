@@ -22,3 +22,18 @@ jobs:
       - name: Run shared quality gate
         # Same command as the local pre-push hook, so PR checks cannot drift.
         run: ./scripts/run_ci_checks.sh full
+
+  spec-gate:
+    name: Spec-driven development gate
+    runs-on: ubuntu-latest
+    # Only meaningful with a base to diff against; a push to main has already
+    # cleared this gate on its originating PR.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check spec gate
+        # Server-side, cannot be skipped with --no-verify; the authoritative
+        # layer per docs/superpowers/specs/2026-08-06-spec-driven-enforcement-design.md.
+        run: ./scripts/check_spec_gate.sh range "origin/${{ github.base_ref }}" "HEAD"

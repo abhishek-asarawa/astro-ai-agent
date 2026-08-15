@@ -1,7 +1,7 @@
 # Design: automated enforcement of spec-driven development
 
 **Date:** 2026-08-06
-**Status:** approved, pending implementation plan
+**Status:** implemented (2026-08-15)
 
 ## Problem
 
@@ -112,6 +112,11 @@ not just GitHub).
 
 ### Optional Cursor companion hook
 
+**Not yet implemented** — the authoritative git/CI layer (script + `commit-msg`
++ `pre-push` + CI job) shipped 2026-08-15; this layer is still additive/optional
+per the design and untested against Cursor's actual hook runtime, so it was
+left for a follow-up rather than shipped unverified.
+
 `.cursor/hooks/spec-gate.sh` registered on `preToolUse`, matching `Write` and
 `StrReplace` tool calls whose target path matches the feature-surface list.
 
@@ -161,8 +166,14 @@ unpushed commits. Decide during planning whether to:
 (consistent with how `run_ci_checks.sh full` already runs there), or
 (b) rely on CI alone to catch multi-commit cases and keep `commit-msg` as a
 single-commit fast check.
-Leaning (a), to match the existing local/CI parity principle in this repo, but
-this should be confirmed in the plan.
+**Resolved (a):** `.githooks/pre-push` reads the `<local-ref> <local-sha>
+<remote-ref> <remote-sha>` lines git feeds it on stdin and calls
+`scripts/check_spec_gate.sh range <remote-sha-or-merge-base> <local-sha>` per
+updated ref before running the full quality gate, matching the existing
+local/CI parity principle. A new remote ref (no `remote-sha`) falls back to
+the merge-base with `origin/main`/`origin/master`; if that can't be
+determined the local check is skipped for that ref and CI remains
+authoritative.
 
 ## Success signal
 
