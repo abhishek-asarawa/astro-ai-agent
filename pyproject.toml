@@ -14,6 +14,8 @@ dependencies = [
     "pyswisseph",
     "chromadb",
     "rank-bm25",
+    "qdrant-client",
+    "fastembed",
     "pydantic>=2",
     "python-dateutil",
 ]
