@@ -22,13 +22,15 @@ import argparse
 import hashlib
 import re
 import sys
+import uuid
 from collections import Counter
 from pathlib import Path
 
-import chromadb
 import requests
+from qdrant_client import models as qmodels
 
 from astro_agent.rag import config as cfg
+from astro_agent.rag import qdrant_store, sparse
 
 # Ranges may omit the dot (e.g. "20 1/2-22 If"); single sloka numbers must use
 # a period so prose like "7 or the Uttarardha" does not start a false verse.
@@ -231,20 +233,29 @@ def _expand_oversize_chunks(chunks):
     return expanded
 
 
-def _delete_chapter_rows(collection, book, chapter):
-    """Remove all indexed rows for this book/chapter (metadata filter)."""
-    res = collection.get(
-        where={
-            "$and": [
-                {"book": {"$eq": book}},
-                {"chapter": {"$eq": int(chapter)}},
-            ]
-        },
+def _chapter_filter(book, chapter):
+    return qmodels.Filter(
+        must=[
+            qmodels.FieldCondition(key="book", match=qmodels.MatchValue(value=book)),
+            qmodels.FieldCondition(key="chapter", match=qmodels.MatchValue(value=int(chapter))),
+        ]
     )
-    ids = res.get("ids") or []
-    if ids:
-        collection.delete(ids=ids)
-    return len(ids)
+
+
+def _delete_chapter_rows(client, book, chapter):
+    """Remove all indexed rows for this book/chapter (payload filter). Returns count removed."""
+    chapter_filter = _chapter_filter(book, chapter)
+    count_before = client.count(
+        collection_name=cfg.QDRANT_COLLECTION,
+        count_filter=chapter_filter,
+        exact=True,
+    ).count
+    if count_before:
+        client.delete(
+            collection_name=cfg.QDRANT_COLLECTION,
+            points_selector=qmodels.FilterSelector(filter=chapter_filter),
+        )
+    return count_before
 
 
 def _ref_id(book, chapter, verse_start, verse_end, chunk_level):
@@ -255,23 +266,23 @@ def _ref_id(book, chapter, verse_start, verse_end, chunk_level):
     return f"{book}-ch{chapter}-v{verse_start}-{verse_end}"
 
 
-def _build_metadata(book, translator, chapter, verse_start, verse_end, chunk_level, text):
+def _build_payload(book, translator, chapter, verse_start, verse_end, chunk_level, text):
     entities = cfg.extract_entities(text)
-    entity_field = "|" + "|".join(entities) + "|" if entities else "||"
     intent_flags = cfg.detect_intent_tags(text)
-    meta = {
+    payload = {
         "book": book,
         "translator": translator,
         "chapter": int(chapter),
         "verse_start": int(verse_start),
         "verse_end": int(verse_end),
         "chunk_level": chunk_level,
-        "entities": entity_field,
+        "entities": entities,
         "token_count": cfg.estimate_tokens(text),
         "ref_id": _ref_id(book, chapter, verse_start, verse_end, chunk_level),
+        "text": text,
     }
-    meta.update(intent_flags)
-    return meta
+    payload.update(intent_flags)
+    return payload
 
 
 def embed_text(text):
@@ -294,12 +305,19 @@ def embed_text(text):
     return embedding
 
 
-def get_collection(db_path):
-    client = chromadb.PersistentClient(path=db_path)
-    return client.get_or_create_collection(
-        name=cfg.CHROMA_COLLECTION,
-        metadata={"hnsw:space": "cosine"},
-    )
+_ID_NAMESPACE = uuid.UUID("2f6a6e9e-6b0a-4e3f-9b7a-1a9e6d7c4f2b")
+
+
+def _point_id(content_hash_hex):
+    """Deterministic UUID derived from the chunk's sha256 content hash.
+
+    Qdrant point IDs must be an unsigned int or a UUID (unlike Chroma,
+    which accepted the raw sha256 hex string directly). uuid5 over a fixed
+    namespace + the same hash always yields the same UUID, so idempotent
+    re-ingest (skip-if-exists, --replace-chapter) behaves identically to
+    the old sha256-as-id scheme.
+    """
+    return str(uuid.uuid5(_ID_NAMESPACE, content_hash_hex))
 
 
 def ingest(input_path, book, translator, chapter, db_path, verbose=False, replace_chapter=False):
@@ -346,29 +364,41 @@ def ingest(input_path, book, translator, chapter, db_path, verbose=False, replac
 
     chunks = _expand_oversize_chunks(chunks)
 
-    collection = get_collection(db_path)
+    client = qdrant_store.get_collection(db_path)
     if replace_chapter:
-        removed = _delete_chapter_rows(collection, book, chapter)
+        removed = _delete_chapter_rows(client, book, chapter)
         if verbose:
             print(
                 f"replace-chapter: removed {removed} existing row(s) for {book} chapter {chapter}",
                 file=sys.stderr,
             )
 
-    new_ids, new_docs, new_embeddings, new_metas = [], [], [], []
+    pending = []
     skipped = 0
-
     for chunk in chunks:
-        chunk_id = _hash_id(chunk["text"])
-        existing = collection.get(ids=[chunk_id])
-        if existing and existing.get("ids"):
+        content_hash = _hash_id(chunk["text"])
+        point_id = _point_id(content_hash)
+        existing = client.retrieve(collection_name=cfg.QDRANT_COLLECTION, ids=[point_id], with_payload=False)
+        if existing:
             skipped += 1
             if verbose:
-                print(f"  skip {chunk_id[:10]}  {chunk['chunk_level']}  v{chunk['verse_start']}-{chunk['verse_end']}")
+                print(
+                    f"  skip {content_hash[:10]}  {chunk['chunk_level']}  v{chunk['verse_start']}-{chunk['verse_end']}"
+                )
             continue
+        pending.append((point_id, content_hash, chunk))
 
-        embedding = embed_text(chunk["text"])
-        meta = _build_metadata(
+    if not pending:
+        return 0, skipped
+
+    dense_embeddings = [embed_text(chunk["text"]) for _pid, _hash, chunk in pending]
+    sparse_embeddings = sparse.embed_documents([chunk["text"] for _pid, _hash, chunk in pending])
+
+    points = []
+    for (point_id, content_hash, chunk), dense_vec, sparse_vec in zip(  # noqa: B905
+        pending, dense_embeddings, sparse_embeddings
+    ):
+        payload = _build_payload(
             book=book,
             translator=translator,
             chapter=chapter,
@@ -377,26 +407,28 @@ def ingest(input_path, book, translator, chapter, db_path, verbose=False, replac
             chunk_level=chunk["chunk_level"],
             text=chunk["text"],
         )
-
-        new_ids.append(chunk_id)
-        new_docs.append(chunk["text"])
-        new_embeddings.append(embedding)
-        new_metas.append(meta)
-
+        payload["content_hash"] = content_hash
+        points.append(
+            qmodels.PointStruct(
+                id=point_id,
+                vector={
+                    qdrant_store.DENSE_VECTOR_NAME: dense_vec,
+                    qdrant_store.SPARSE_VECTOR_NAME: qmodels.SparseVector(
+                        indices=sparse_vec.indices.tolist(),
+                        values=sparse_vec.values.tolist(),
+                    ),
+                },
+                payload=payload,
+            )
+        )
         if verbose:
             print(
-                f"  add  {chunk_id[:10]}  {meta['ref_id']:24s}  tokens={meta['token_count']:4d}  entities={meta['entities']}"
+                f"  add  {content_hash[:10]}  {payload['ref_id']:24s}  "
+                f"tokens={payload['token_count']:4d}  entities={payload['entities']}"
             )
 
-    if new_ids:
-        collection.add(
-            ids=new_ids,
-            documents=new_docs,
-            embeddings=new_embeddings,
-            metadatas=new_metas,
-        )
-
-    return len(new_ids), skipped
+    client.upsert(collection_name=cfg.QDRANT_COLLECTION, points=points)
+    return len(points), skipped
 
 
 def parse_args():
@@ -405,7 +437,7 @@ def parse_args():
     parser.add_argument("--book", default="bphs", help="Book key (e.g. 'bphs').")
     parser.add_argument("--translator", default="sharma", help="Translator key.")
     parser.add_argument("--chapter", type=int, required=True, help="Chapter number from the source edition.")
-    parser.add_argument("--db-path", default=cfg.CHROMA_PATH, help="ChromaDB persistence directory.")
+    parser.add_argument("--db-path", default=cfg.QDRANT_PATH, help="Qdrant persistence directory.")
     parser.add_argument("--verbose", action="store_true", help="Print per-chunk add/skip log.")
     parser.add_argument(
         "--replace-chapter",
