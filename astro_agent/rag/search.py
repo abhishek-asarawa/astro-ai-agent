@@ -20,11 +20,11 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-import chromadb
 import requests
-from rank_bm25 import BM25Okapi
+from qdrant_client import models as qmodels
 
 from astro_agent.rag import config as cfg
+from astro_agent.rag import qdrant_store, sparse
 
 _ce_model = None
 _ce_load_attempted = False
@@ -144,20 +144,16 @@ def embed_query(text):
 
 
 def _get_collection(db_path):
-    client = chromadb.PersistentClient(path=db_path)
-    return client.get_or_create_collection(
-        name=cfg.CHROMA_COLLECTION,
-        metadata={"hnsw:space": "cosine"},
-    )
+    return qdrant_store.get_collection(db_path)
 
 
 def _intent_filter(intent):
     if not intent or intent == "general":
         return None
-    key = f"intent_{intent}"
     if intent not in cfg.SUPPORTED_INTENTS:
         return None
-    return {key: True}
+    key = f"intent_{intent}"
+    return qmodels.Filter(must=[qmodels.FieldCondition(key=key, match=qmodels.MatchValue(value=True))])
 
 
 def _summarize_chart_facts(chart_facts):
@@ -347,7 +343,7 @@ def _hyde_rewrite_query(question: str, intent: str, structural: str, intent_word
 def _parse_entities_field(entities_field):
     if not entities_field:
         return set()
-    return {tok for tok in entities_field.split("|") if tok}
+    return set(entities_field)
 
 
 _DIGNITY_ENTITY_ALIASES = (
@@ -376,32 +372,34 @@ def _query_entities(question, chart_facts):
     return _expand_dignity_entities(base)
 
 
-def _dense_retrieve(collection, query_embedding, where, n_results):
-    return collection.query(
-        query_embeddings=[query_embedding],
-        n_results=n_results,
-        where=where,
-        include=["documents", "metadatas", "distances"],
-    )
+def _dense_retrieve(client, query_embedding, where, n_results):
+    return client.query_points(
+        collection_name=cfg.QDRANT_COLLECTION,
+        query=query_embedding,
+        using=qdrant_store.DENSE_VECTOR_NAME,
+        query_filter=where,
+        limit=n_results,
+        with_payload=True,
+    ).points
 
 
-def _flatten_chroma_result(result):
+def _flatten_qdrant_points(points):
     out = []
-    if not result or not result.get("ids") or not result["ids"][0]:
-        return out
-    ids = result["ids"][0]
-    docs = result["documents"][0]
-    metas = result["metadatas"][0]
-    dists = result["distances"][0]
-    for i, (cid, doc, meta, dist) in enumerate(zip(ids, docs, metas, dists, strict=False)):
-        out.append({"rank": i, "id": cid, "text": doc, "metadata": meta or {}, "distance": dist})
+    for i, point in enumerate(points):
+        payload = point.payload or {}
+        out.append(
+            {
+                "rank": i,
+                "id": str(point.id),
+                "text": payload.get("text", ""),
+                "metadata": payload,
+                # Qdrant's cosine query score IS the similarity; store it as a
+                # "distance" (1 - similarity) so downstream code, which does
+                # `similarity = 1.0 - distance` everywhere, is unchanged.
+                "distance": 1.0 - float(point.score),
+            }
+        )
     return out
-
-
-def _tokenize_bm25(text):
-    if not text:
-        return []
-    return re.findall(r"[A-Za-z0-9]+", text.lower())
 
 
 def _bm25_expanded_queries(queries, question, chart_facts):
@@ -423,19 +421,38 @@ def _bm25_expanded_queries(queries, question, chart_facts):
     return deduped
 
 
-def _bm25_max_scores_per_id(queries, tokenized_corpus, ids):
-    if not tokenized_corpus or not ids:
-        return {}
-    bm25 = BM25Okapi(tokenized_corpus)
-    acc = {cid: 0.0 for cid in ids}
+def _sparse_search(client, queries, where, n_results):
+    """Run a sparse (BM25) query per query string, keep the max score per id.
+
+    Returns (scores_by_id, points_by_id). points_by_id lets the caller
+    build RetrievedChunk objects for BM25-only hits directly from the
+    query response payload — unlike the old rank_bm25 implementation,
+    which had to pull the entire filtered corpus into Python to score it.
+    """
+    scores_by_id = {}
+    points_by_id = {}
     for q in queries:
-        tq = _tokenize_bm25(q)
-        if not tq:
+        sparse_vec = sparse.embed_query(q)
+        if len(sparse_vec.indices) == 0:
             continue
-        scores = bm25.get_scores(tq)
-        for i, cid in enumerate(ids):
-            acc[cid] = max(acc[cid], float(scores[i]))
-    return acc
+        hits = client.query_points(
+            collection_name=cfg.QDRANT_COLLECTION,
+            query=qmodels.SparseVector(
+                indices=sparse_vec.indices.tolist(),
+                values=sparse_vec.values.tolist(),
+            ),
+            using=qdrant_store.SPARSE_VECTOR_NAME,
+            query_filter=where,
+            limit=n_results,
+            with_payload=True,
+        ).points
+        for point in hits:
+            cid = str(point.id)
+            score = float(point.score)
+            if score > scores_by_id.get(cid, float("-inf")):
+                scores_by_id[cid] = score
+                points_by_id[cid] = point
+    return scores_by_id, points_by_id
 
 
 def _rrf_scores(dense_rank, bm25_rank, ids_union):
@@ -454,17 +471,6 @@ def _rrf_scores(dense_rank, bm25_rank, ids_union):
     return out
 
 
-def _filtered_corpus_get(collection, where, fall_back_no_filter):
-    data = collection.get(where=where, include=["documents", "metadatas"])
-    ids = data.get("ids") or []
-    if not ids and where is not None and fall_back_no_filter:
-        data = collection.get(where=None, include=["documents", "metadatas"])
-        ids = data.get("ids") or []
-    docs = data.get("documents") or []
-    metas = data.get("metadatas") or []
-    return ids, docs, metas
-
-
 def _dense_ranks_from_merged(merged_dense):
     items = sorted(merged_dense.items(), key=lambda x: (x[1]["rank"], x[0]))
     return {cid: i for i, (cid, _) in enumerate(items)}
@@ -475,31 +481,27 @@ def _bm25_ranks_from_scores(scores_by_id):
     return {cid: i for i, cid in enumerate(ranked)}
 
 
-def _hybrid_fusion_chunks(collection, queries, merged_dense, where, fall_back_no_filter, question, chart_facts):
-    ids_list, docs_list, metas_list = _filtered_corpus_get(collection, where, fall_back_no_filter)
-    if fall_back_no_filter and merged_dense.keys() - set(ids_list or []):
-        ids_list, docs_list, metas_list = _filtered_corpus_get(collection, None, False)
-
-    if not ids_list:
-        return _build_chunks(merged_dense)
-
-    tokenized_corpus = [_tokenize_bm25(d or "") for d in docs_list]
-    tokenized_corpus = [t if t else ["_"] for t in tokenized_corpus]
-
+def _hybrid_fusion_chunks(
+    client, queries, merged_dense, where, question, chart_facts, n_results, fall_back_no_filter=True
+):
     bm25_queries = _bm25_expanded_queries(queries, question, chart_facts)
-    bm25_scores = _bm25_max_scores_per_id(bm25_queries, tokenized_corpus, ids_list)
+    bm25_scores, bm25_points = _sparse_search(client, bm25_queries, where, n_results)
+    if not bm25_scores and where is not None and fall_back_no_filter:
+        bm25_scores, bm25_points = _sparse_search(client, bm25_queries, None, n_results)
+
     bm25_rank = _bm25_ranks_from_scores(bm25_scores)
     dense_rank = _dense_ranks_from_merged(merged_dense)
 
-    ids_union = set(ids_list) | set(merged_dense.keys())
+    ids_union = set(bm25_scores.keys()) | set(merged_dense.keys())
+    if not ids_union:
+        return []
     rrf = _rrf_scores(dense_rank, bm25_rank, ids_union)
     id_order = sorted(ids_union, key=lambda cid: (-rrf[cid], cid))
 
-    return _chunks_from_rrf_order(id_order, merged_dense, ids_list, docs_list, metas_list, bm25_scores)
+    return _chunks_from_rrf_order(id_order, merged_dense, bm25_points, bm25_scores)
 
 
-def _chunks_from_rrf_order(id_order, merged_dense, ids_list, docs_list, metas_list, bm25_scores):
-    by_id = {cid: {"text": d, "metadata": m or {}} for cid, d, m in zip(ids_list, docs_list, metas_list, strict=False)}
+def _chunks_from_rrf_order(id_order, merged_dense, bm25_points, bm25_scores):
     max_bm25 = max(bm25_scores.values()) if bm25_scores else 0.0
     chunks = []
     for i, cid in enumerate(id_order):
@@ -510,11 +512,12 @@ def _chunks_from_rrf_order(id_order, merged_dense, ids_list, docs_list, metas_li
             similarity = 1.0 - distance
             text = hit["text"]
         else:
-            row = by_id.get(cid)
-            if not row:
+            point = bm25_points.get(cid)
+            if not point:
                 continue
-            meta = row["metadata"]
-            text = row["text"] or ""
+            payload = point.payload or {}
+            meta = payload
+            text = payload.get("text", "")
             raw = bm25_scores.get(cid, 0.0)
             if max_bm25 > 0:
                 similarity = max(cfg.BM25_SIMILARITY_FLOOR, raw / max_bm25)
@@ -690,7 +693,7 @@ def _rerank_cross_encoder(cross_encoder, chunks, question, intent, chart_facts):
     heur_n = _min_max_norm(heur_raw)
     ce_n = _min_max_norm(ce_raw)
     w = max(0.0, min(1.0, cfg.CROSS_ENCODER_HEURISTIC_BLEND))
-    for chunk, hn, cn in zip(chunks, heur_n, ce_n, strict=False):
+    for chunk, hn, cn in zip(chunks, heur_n, ce_n):  # noqa: B905
         chunk.score = w * cn + (1.0 - w) * hn
     chunks.sort(key=lambda c: c.score, reverse=True)
     for i, chunk in enumerate(chunks):
@@ -700,7 +703,7 @@ def _rerank_cross_encoder(cross_encoder, chunks, question, intent, chart_facts):
 
 def _rerank_heuristic(chunks, intent, question=None, chart_facts=None):
     scores = _heuristic_scores_for_chunks(chunks, intent, question, chart_facts)
-    for chunk, s in zip(chunks, scores, strict=False):
+    for chunk, s in zip(chunks, scores):  # noqa: B905
         chunk.score = s
     chunks.sort(key=lambda c: c.score, reverse=True)
     for i, chunk in enumerate(chunks):
@@ -732,13 +735,13 @@ def search(
         top_k = cfg.RERANK_TOP_K
     if dense_top_k is None:
         dense_top_k = cfg.DENSE_TOP_K
-    db_path = db_path or cfg.CHROMA_PATH
+    db_path = db_path or cfg.QDRANT_PATH
 
     queries = expand_queries(question, intent, chart_facts)
     if not queries:
         return []
 
-    collection = _get_collection(db_path)
+    client = _get_collection(db_path)
     where = _intent_filter(intent)
 
     per_query_hits = []
@@ -746,11 +749,11 @@ def search(
         embedding = embed_query(q)
         if embedding is None:
             continue
-        result = _dense_retrieve(collection, embedding, where, dense_top_k)
-        hits = _flatten_chroma_result(result)
+        points = _dense_retrieve(client, embedding, where, dense_top_k)
+        hits = _flatten_qdrant_points(points)
         if not hits and where is not None and fall_back_no_filter:
-            result = _dense_retrieve(collection, embedding, None, dense_top_k)
-            hits = _flatten_chroma_result(result)
+            points = _dense_retrieve(client, embedding, None, dense_top_k)
+            hits = _flatten_qdrant_points(points)
         per_query_hits.append(hits)
 
     merged = _merge_results(per_query_hits)
@@ -758,7 +761,16 @@ def search(
         return []
 
     if cfg.HYBRID_BM25_ENABLED:
-        chunks = _hybrid_fusion_chunks(collection, queries, merged, where, fall_back_no_filter, question, chart_facts)
+        chunks = _hybrid_fusion_chunks(
+            client,
+            queries,
+            merged,
+            where,
+            question,
+            chart_facts,
+            dense_top_k,
+            fall_back_no_filter=fall_back_no_filter,
+        )
     else:
         chunks = _build_chunks(merged)
 
