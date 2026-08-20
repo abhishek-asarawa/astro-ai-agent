@@ -7,6 +7,8 @@ named vectors). Centralizing schema creation here avoids the two files
 drifting out of sync.
 """
 
+from functools import lru_cache
+
 from qdrant_client import QdrantClient
 from qdrant_client import models as qmodels
 
@@ -36,8 +38,15 @@ def ensure_collection(client):
     )
 
 
+@lru_cache(maxsize=8)
 def get_collection(db_path=None):
-    """Return a QdrantClient (local/embedded mode) with the RAG collection ensured."""
+    """Return a cached QdrantClient (local/embedded mode) with the RAG collection ensured.
+
+    Cached by path so multiple callers within the same process (e.g. the bulk
+    ingest script and builder.ingest()) share one client instance — Qdrant's
+    local mode uses an exclusive file lock that prevents two simultaneous
+    clients on the same path.
+    """
     client = QdrantClient(path=db_path or cfg.QDRANT_PATH)
     ensure_collection(client)
     return client

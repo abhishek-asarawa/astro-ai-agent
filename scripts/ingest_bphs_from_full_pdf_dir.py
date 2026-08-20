@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batch-ingest BPHS chapter .txt files from a directory into Chroma.
+"""Batch-ingest BPHS chapter .txt files from a directory into Qdrant.
 
 Expects filenames like ``ch_14_effects_of_1_house.txt`` (``ch_<n>_`` prefix).
 
@@ -7,9 +7,9 @@ Examples:
   python scripts/ingest_bphs_from_full_pdf_dir.py \\
     --dir data/corpus/bphs_sharma/from_full_pdf --verbose
 
-  # Skip whole chapters that already have any rows for book+chapter in Chroma:
+  # Skip whole chapters that already have any rows for book+chapter in Qdrant:
   python scripts/ingest_bphs_from_full_pdf_dir.py \\
-    --dir data/corpus/bphs_sharma/from_full_pdf --skip-existing-in-chroma --verbose
+    --dir data/corpus/bphs_sharma/from_full_pdf --skip-existing --verbose
 """
 
 from __future__ import annotations
@@ -19,8 +19,11 @@ import re
 import sys
 from pathlib import Path
 
+from qdrant_client import models as qmodels
+
 from astro_agent.rag import config as cfg
-from astro_agent.rag.builder import get_collection, ingest
+from astro_agent.rag import qdrant_store
+from astro_agent.rag.builder import ingest
 
 CHAPTER_FROM_NAME = re.compile(r"^ch_(\d+)_", re.IGNORECASE)
 
@@ -30,17 +33,18 @@ def _chapter_from_path(path: Path) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _chapter_has_any_rows(collection, book: str, chapter: int) -> bool:
-    res = collection.get(
-        where={
-            "$and": [
-                {"book": {"$eq": book}},
-                {"chapter": {"$eq": int(chapter)}},
+def _chapter_has_any_rows(client, book: str, chapter: int) -> bool:
+    count = client.count(
+        collection_name=cfg.QDRANT_COLLECTION,
+        count_filter=qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(key="book", match=qmodels.MatchValue(value=book)),
+                qmodels.FieldCondition(key="chapter", match=qmodels.MatchValue(value=int(chapter))),
             ]
-        },
-        limit=1,
-    )
-    return bool(res.get("ids"))
+        ),
+        exact=True,
+    ).count
+    return count > 0
 
 
 def main() -> None:
@@ -53,11 +57,11 @@ def main() -> None:
     )
     parser.add_argument("--book", default="bphs")
     parser.add_argument("--translator", default="sharma")
-    parser.add_argument("--db-path", default=cfg.CHROMA_PATH)
+    parser.add_argument("--db-path", default=cfg.QDRANT_PATH)
     parser.add_argument(
-        "--skip-existing-in-chroma",
+        "--skip-existing",
         action="store_true",
-        help="If Chroma already has any chunk for this book+chapter, skip the file entirely.",
+        help="If Qdrant already has any chunk for this book+chapter, skip the file entirely.",
     )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
@@ -85,15 +89,15 @@ def main() -> None:
         sys.exit(1)
 
     files.sort(key=lambda t: t[0])
-    collection = get_collection(args.db_path)
+    client = qdrant_store.get_collection(args.db_path)
     total_added = total_skipped_chunks = 0
     skipped_files = 0
 
     for chapter, path in files:
-        if args.skip_existing_in_chroma and _chapter_has_any_rows(collection, args.book, chapter):
+        if args.skip_existing and _chapter_has_any_rows(client, args.book, chapter):
             skipped_files += 1
             if args.verbose:
-                print(f"skip file (chapter already in Chroma): {path.name}", file=sys.stderr)
+                print(f"skip file (chapter already in Qdrant): {path.name}", file=sys.stderr)
             continue
         added, skipped = ingest(
             input_path=path,
@@ -111,7 +115,7 @@ def main() -> None:
     print(
         f"Done. Files processed: {len(files) - skipped_files}/{len(files)}; "
         f"new chunks: {total_added}; in-file hash skips: {total_skipped_chunks}; "
-        f"files skipped (--skip-existing-in-chroma): {skipped_files}"
+        f"files skipped (--skip-existing): {skipped_files}"
     )
 
 
