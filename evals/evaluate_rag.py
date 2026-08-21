@@ -643,7 +643,7 @@ def parse_args():
     parser.add_argument("--golden", default=DEFAULT_GOLDEN_PATH, help="Path to golden cases JSON.")
     parser.add_argument("--output", default=DEFAULT_REPORT_PATH, help="Where to write the eval report JSON.")
     parser.add_argument("--history", default=DEFAULT_HISTORY_PATH, help="Path to RAG eval history index.")
-    parser.add_argument("--db-path", default=cfg.CHROMA_PATH, help="Chroma DB path.")
+    parser.add_argument("--db-path", default=cfg.QDRANT_PATH, help="Qdrant DB path.")
     parser.add_argument("--no-retention", action="store_true", help="Skip writing to history.")
     parser.add_argument(
         "--golden-intent",
