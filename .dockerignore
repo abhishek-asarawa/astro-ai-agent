@@ -1,0 +1,28 @@
+# Git metadata and nested worktrees are host-only and can be very large.
+.git
+.worktrees/
+
+# Local Python environments and tool caches are never image inputs.
+.venv*/
+venv/
+**/.venv*/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+*.py[cod]
+
+# Runtime, corpus, evaluation, and reference-book artifacts are regenerated.
+chroma_db/
+eval_reports/
+acceptance_*/
+data/corpus/
+ocr_work/
+books/
+*.log
+*.pdf
+
+# These host-specific files are generated before Compose starts.
+.devcontainer/.env
+.devcontainer/compose.local.yaml

@@ -1,0 +1,21 @@
+{
+  "name": "Astro AI Agent",
+  "dockerComposeFile": [
+    "compose.yaml",
+    "compose.local.yaml"
+  ],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "initializeCommand": "python3 scripts/devcontainer_support.py prepare --worktree .",
+  "postCreateCommand": "python -m pip install --user -e .",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [
+    8501
+  ],
+  "portsAttributes": {
+    "8501": {
+      "label": "Astro Streamlit",
+      "onAutoForward": "notify"
+    }
+  }
+}

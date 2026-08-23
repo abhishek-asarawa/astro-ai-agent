@@ -1,0 +1,192 @@
+"""Static contracts for the shared Compose and Dev Container environment."""
+
+import json
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEVCONTAINER = REPO_ROOT / ".devcontainer"
+DOCKERIGNORE = REPO_ROOT / ".dockerignore"
+
+
+def test_dockerfile_uses_python_311_and_cached_dependency_layer() -> None:
+    text = (DEVCONTAINER / "Dockerfile").read_text()
+    assert "python:1-3.11-bookworm" in text
+    assert "rm -f /etc/apt/sources.list.d/yarn.list" in text
+    assert "COPY requirements.txt requirements-dev.txt pyproject.toml" in text
+    assert "pip install --no-cache-dir -r requirements-dev.txt" in text
+    assert text.index("COPY requirements.txt") < text.index("pip install --no-cache-dir")
+    assert "USER vscode" in text
+
+
+def test_compose_service_is_idle_and_uses_shared_ollama() -> None:
+    text = (DEVCONTAINER / "compose.yaml").read_text()
+    assert "app:" in text
+    assert 'user: "${LOCAL_UID}:${LOCAL_GID}"' in text
+    assert "target: /workspace" in text
+    assert "HOME: /tmp/astro-home" in text
+    assert 'mkdir -p "$$HOME"' in text
+    assert "sleep infinity" in text
+    assert "ASTRO_OLLAMA_HOST: http://host.docker.internal:11434" in text
+    assert "host.docker.internal:host-gateway" in text
+    assert "target: 8501" in text
+    assert 'published: "0"' in text
+    # Publish only on loopback: an ephemeral host port bound to 0.0.0.0 would
+    # expose each worktree's Streamlit UI to the whole LAN.
+    assert "host_ip: 127.0.0.1" in text
+    assert "streamlit run" not in text
+
+
+def test_devcontainer_attaches_to_compose_app_service() -> None:
+    config = json.loads((DEVCONTAINER / "devcontainer.json").read_text())
+    assert config["service"] == "app"
+    assert config["workspaceFolder"] == "/workspace"
+    assert config["dockerComposeFile"] == ["compose.yaml", "compose.local.yaml"]
+    assert config["initializeCommand"] == "python3 scripts/devcontainer_support.py prepare --worktree ."
+    assert config["postCreateCommand"] == "python -m pip install --user -e ."
+    # No `remoteUser`/`updateRemoteUserUID`: the IDE must attach as whatever
+    # user Compose starts the container with (`user: "${LOCAL_UID}:${LOCAL_GID}"`
+    # in compose.yaml), matching the host-owned bind mount the helper CLI uses.
+    assert "remoteUser" not in config
+    assert "updateRemoteUserUID" not in config
+    assert config["shutdownAction"] == "stopCompose"
+
+
+def test_dockerignore_excludes_local_metadata_and_large_artifacts() -> None:
+    patterns = {
+        line.strip() for line in DOCKERIGNORE.read_text().splitlines() if line.strip() and not line.startswith("#")
+    }
+    required = {
+        ".git",
+        ".worktrees/",
+        ".venv*/",
+        "**/__pycache__/",
+        ".pytest_cache/",
+        ".mypy_cache/",
+        ".ruff_cache/",
+        "chroma_db/",
+        "eval_reports/",
+        "acceptance_*/",
+        "data/corpus/",
+        "ocr_work/",
+        "books/",
+        "*.log",
+        ".devcontainer/.env",
+        ".devcontainer/compose.local.yaml",
+    }
+    assert required <= patterns
+
+
+def test_dockerignore_retains_build_manifests_and_package_source() -> None:
+    text = DOCKERIGNORE.read_text()
+    assert "requirements.txt" not in text
+    assert "requirements-dev.txt" not in text
+    assert "pyproject.toml" not in text
+    assert "astro_agent/" not in text
+
+
+def test_documentation_covers_required_workflows() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "./scripts/devcontainer-worktree.sh",
+        "Reopen in Container",
+        "./scripts/run_ci_checks.sh full",
+        "streamlit run app.py --server.address 0.0.0.0",
+        "docker compose port app 8501",
+        "http://host.docker.internal:11434/api/tags",
+        "docker compose",
+        "down",
+        "does not remove the Git worktree or branch",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_describes_ide_attach_identity() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "no `remoteUser`/`updateRemoteUserUID`",
+        'inherits the Compose `user: "${LOCAL_UID}:${LOCAL_GID}"`',
+        "same host-owned identity the CLI helper uses",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_requires_streamlit_http_success_on_both_smoke_urls() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "curl -sf -o /dev/null -w '%{http_code}\\n' http://localhost:<smoke-one-port>",
+        "curl -sf -o /dev/null -w '%{http_code}\\n' http://localhost:<smoke-two-port>",
+        "must print `200` and exit `0`",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_describes_dependency_cache_verification() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "up -d --build app",
+        "reports the `pip install --no-cache-dir -r requirements-dev.txt` step as `CACHED`",
+        "source is bind-mounted at runtime and never copied into the image",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_labels_smoke_image_cleanup_as_temporary() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "## Temporary smoke-image cleanup",
+        "Routine `down` intentionally leaves the built image in place",
+        "docker image rm <smoke-one-project>-app <smoke-two-project>-app",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_describes_home_survival_and_loss_precisely() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    required_phrases = (
+        "survives `docker compose ... stop` and `start`",
+        "lost whenever the container is removed or recreated",
+    )
+    for phrase in required_phrases:
+        assert phrase in text
+
+
+def test_documentation_restores_cache_probe_before_worktree_removal() -> None:
+    text = (REPO_ROOT / "docs" / "development" / "devcontainers.md").read_text()
+    probe_command = 'echo "# smoke-cache-probe: $(date +%s)" >> astro_agent/__init__.py'
+    cached_marker = "reports the `pip install --no-cache-dir -r requirements-dev.txt` step as `CACHED`"
+    restore_filter = "grep -v '^# smoke-cache-probe:' astro_agent/__init__.py > astro_agent/__init__.py.tmp"
+    restore_move = "mv astro_agent/__init__.py.tmp astro_agent/__init__.py"
+    restore_check = "git status --short"
+    no_hard_reset = "without `git reset --hard` or `git checkout --`"
+    worktree_remove = "git worktree remove .worktrees/smoke-one"
+
+    for phrase in (
+        probe_command,
+        cached_marker,
+        restore_filter,
+        restore_move,
+        restore_check,
+        no_hard_reset,
+        worktree_remove,
+    ):
+        assert phrase in text
+
+    probe_index = text.index(probe_command)
+    cached_index = text.index(cached_marker)
+    restore_filter_index = text.index(restore_filter)
+    restore_move_index = text.index(restore_move)
+    worktree_remove_index = text.index(worktree_remove)
+
+    # The probe is added, confirmed cached, then explicitly restored before
+    # any worktree/branch cleanup runs -- never left for a forced removal.
+    assert probe_index < cached_index < restore_filter_index < restore_move_index < worktree_remove_index
+
+    # Cleanup must stay non-forced: the documented removal command has no
+    # trailing `--force` flag attached to it.
+    assert "git worktree remove .worktrees/smoke-one --force" not in text
+    assert "git worktree remove .worktrees/smoke-two --force" not in text

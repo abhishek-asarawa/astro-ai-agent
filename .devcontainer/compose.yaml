@@ -1,0 +1,29 @@
+name: ${COMPOSE_PROJECT_NAME}
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    user: "${LOCAL_UID}:${LOCAL_GID}"
+    working_dir: /workspace
+    command:
+      - /bin/sh
+      - -c
+      - mkdir -p "$$HOME" && exec sleep infinity
+    init: true
+    volumes:
+      - type: bind
+        source: ..
+        target: /workspace
+    environment:
+      ASTRO_OLLAMA_HOST: http://host.docker.internal:11434
+      HOME: /tmp/astro-home
+      PYTHONUNBUFFERED: "1"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - target: 8501
+        published: "0"
+        protocol: tcp
+        host_ip: 127.0.0.1

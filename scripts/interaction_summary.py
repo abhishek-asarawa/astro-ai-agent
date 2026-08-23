@@ -25,9 +25,7 @@ def load_records(path: Path):
 def build_negative_feedback_report(rows: list[dict]) -> list[dict]:
     """Join negative feedback rows to their interaction records for manual review."""
     interactions_by_id = {
-        r["interaction_id"]: r
-        for r in rows
-        if r.get("event") == "interaction" and r.get("interaction_id")
+        r["interaction_id"]: r for r in rows if r.get("event") == "interaction" and r.get("interaction_id")
     }
     candidates: list[dict] = []
     for fb in rows:
@@ -109,11 +107,7 @@ def main():
 
     if interactions:
         parse_fail = sum(1 for r in interactions if not r.get("parsed_ok"))
-        low_conf = sum(
-            1
-            for r in interactions
-            if r.get("confidence_int") is not None and r["confidence_int"] < 50
-        )
+        low_conf = sum(1 for r in interactions if r.get("confidence_int") is not None and r["confidence_int"] < 50)
         print(f"parse_failures={parse_fail} low_confidence_answers={low_conf}")
 
         intents = Counter(r.get("intent") or "?" for r in interactions)
