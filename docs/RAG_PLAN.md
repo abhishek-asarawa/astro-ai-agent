@@ -227,6 +227,7 @@ Historical **`rag_v0_20260503_085118`** remains a useful **pre–full-book** che
 | **`search_for_eval` must use `search(top_k=None)`** | Returning only `DENSE_TOP_K` post-rerank rows dropped gold refs still in the deduped pool (e.g. `bphs-ch23-v16`), collapsing gold@3 on full-book indexes | 2026-05-10 |
 | **Full-book rerank: pre-order bonus + house chapter hints + BM25 sim cap** | `PRE_RERANK_WEIGHT` trusts RRF/dense ordering; `HOUSE_EFFECTS_CHAPTER` + question/chart hints + Navamsa align lift house-specific verses; `BM25_SIMILARITY_CAP` stops pseudo-sim 1.0 BM25 rows from dominating | 2026-05-10 |
 | **`HOUSE_EFFECTS_CHAPTER` all 12 houses + 25-case RAG goldens** | Extended map with **1→14, 3→16, 4→17, 5→18, 7→20, 12→25** (Sharma “effects” chapters per `tools/ingest_bphs_sharma_house_arc.sh`); six new rows in `rag_eval_v0.json`; accepted **`rag_v0_20260510_085550`** **`1.00 / 1.00 / +0.50`**. Rolling history compared to **`rag_v0_20260503_085118`** (silver 0.90) so the wider suite could register without a strict delta regression vs the prior **1.00 / 1.00** row. | 2026-05-10 |
+| **Qdrant (local/embedded mode) + fastembed BM25 over Chroma + rank_bm25** | Chroma's hybrid layer rebuilt a full-corpus BM25 index from scratch on every query (worse for `intent=general`, which skips the where-filter entirely); fastembed precomputes sparse BM25 vectors once at ingest, queried via indexed KNN. Qdrant's local mode keeps the same embedded/no-service deployment model Chroma had. See `docs/superpowers/specs/2026-08-16-rag-qdrant-migration-design.md`. | 2026-08-16 |
 
 ## Quick commands
 
@@ -234,16 +235,16 @@ Historical **`rag_v0_20260503_085118`** remains a useful **pre–full-book** che
 ```bash
 source venv/bin/activate
 # Example input path (create locally from PDF/OCR; not in git):
-python knowledge_builder.py \
+python astro_agent/rag/builder.py \
   --input data/corpus/bphs_sharma/ch_19_effects_of_6_house.txt \
   --book bphs --translator sharma --chapter 19 \
   --verbose
 ```
 
-After splitter or corpus edits, drop stale Chroma rows for that chapter then add fresh chunks:
+After splitter or corpus edits, drop stale rows for that chapter then add fresh chunks:
 
 ```bash
-python knowledge_builder.py \
+python astro_agent/rag/builder.py \
   --input data/corpus/bphs_sharma/ch_19_effects_of_6_house.txt \
   --book bphs --translator sharma --chapter 19 \
   --replace-chapter --verbose
@@ -251,7 +252,7 @@ python knowledge_builder.py \
 
 ### Run the eval (against golden v0)
 ```bash
-python evaluate_rag.py \
+python evals/evaluate_rag.py \
   --golden data/golden/rag_eval_v0.json \
   --output rag_eval_report.json \
   --history rag_eval_history.json
@@ -264,7 +265,7 @@ Add `--no-retention` to skip writing to history (useful while iterating).
 **Optional LLM judge (faithfulness vs retrieved chunks):** runs **serially** (answer + judge per eligible case; avoids VRAM pressure). Does **not** affect `rag_eval_history.json` acceptance (retrieval metrics only).
 
 ```bash
-python evaluate_rag.py \
+python evals/evaluate_rag.py \
   --golden data/golden/rag_eval_v0.json \
   --output rag_eval_report.json \
   --history rag_eval_history.json \
@@ -280,7 +281,7 @@ python evaluate_rag.py \
 ```bash
 source venv/bin/activate
 # Recommended: RAG metrics + embedding grounding + small judge; rag-style history retention
-python evaluate_career.py --rag --runs 3 --workers 1 \
+python evals/evaluate_career.py --rag --runs 3 --workers 1 \
   --retention-mode rag \
   --judge-model llama3.2:3b \
   --output career_eval_report.json \
@@ -289,13 +290,12 @@ python evaluate_career.py --rag --runs 3 --workers 1 \
 - **`--no-grounding`**: skip `nomic-embed-text` similarity vs chunks (faster; weaker `--retention-mode rag`).
 - **`--retention-mode legacy`**: history compares `enriched_keyword_avg` / template (older behavior).
 
-### Inspect what's in the index
+### Inspect what’s in the index
 ```bash
 python -c "
-import chromadb, rag_config as cfg
-client = chromadb.PersistentClient(path=cfg.CHROMA_PATH)
-col = client.get_or_create_collection(name=cfg.CHROMA_COLLECTION, metadata={'hnsw:space':'cosine'})
-print(f'Total: {col.count()}')
+from astro_agent.rag import qdrant_store, config as cfg
+client = qdrant_store.get_collection(cfg.QDRANT_PATH)
+print(f’Total: {client.count(cfg.QDRANT_COLLECTION, exact=True).count}’)
 "
 ```
 

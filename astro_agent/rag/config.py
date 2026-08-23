@@ -26,13 +26,6 @@ EMBED_DIM = 768
 KEEP_ALIVE = 0
 EMBED_TIMEOUT_S = 60
 
-CHROMA_PATH = "chroma_db"
-CHROMA_COLLECTION = "vedic_corpus"
-
-# --- Qdrant (local/embedded mode) ---
-# Added alongside CHROMA_PATH/CHROMA_COLLECTION during migration; the
-# Chroma constants are removed once evaluate_rag.py confirms parity
-# (see docs/superpowers/plans/2026-08-16-rag-qdrant-migration.md, Task 11).
 QDRANT_PATH = "qdrant_db"
 QDRANT_COLLECTION = "vedic_corpus"
 DENSE_VECTOR_NAME = "dense"

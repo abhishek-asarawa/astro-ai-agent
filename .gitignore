@@ -33,8 +33,8 @@ venv/
 *.swp
 *~
 
-# --- Local vector store (Chroma) ---
-chroma_db/
+# --- Local vector store (Qdrant) ---
+qdrant_db/
 *.sqlite3
 *.sqlite
 
