@@ -29,6 +29,20 @@ def test_humanize_answer_uses_llm_response(mock_query):
 
 
 @patch("astro_agent.llm.humanizer.query_ollama_once")
+def test_grounded_answer_skips_ungrounded_rewrite(mock_query):
+    result = humanize_answer(
+        SAMPLE_RAW,
+        "Why am I not satisfied with my sex life?",
+        grounded=True,
+    )
+
+    mock_query.assert_not_called()
+    assert "mixed signals for intimacy" in result
+    assert "Honest talks can help" in result
+    assert "invented" not in result
+
+
+@patch("astro_agent.llm.humanizer.query_ollama_once")
 def test_humanize_answer_falls_back_on_empty(mock_query):
     mock_query.return_value = ""
     result = humanize_answer(SAMPLE_RAW, "Why am I not satisfied with my sex life?")

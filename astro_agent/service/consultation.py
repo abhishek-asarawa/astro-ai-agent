@@ -268,6 +268,7 @@ def run_consultation(
         model_name=resolved_model,
         num_ctx=resolved_num_ctx,
         parsed=parsed,
+        grounded=bool(request.rag_enabled and rag_bundle and rag_bundle.get("allowed_refs")),
     )
     interaction_id = uuid.uuid4().hex
     latency_ms = (time.perf_counter() - started) * 1000.0

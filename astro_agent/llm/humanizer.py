@@ -19,8 +19,16 @@ def humanize_answer(
     timeout_s: int = HUMANIZE_TIMEOUT_S,
     num_ctx: int | None = None,
     parsed: dict | None = None,
+    grounded: bool = False,
 ) -> str:
-    """Rewrite a structured astrology reading as one flowing chat reply."""
+    """Rewrite a structured reading, or preserve validated RAG output."""
+    resolved = parsed if parsed is not None else parse_structured_answer(raw_answer)
+    if grounded:
+        # A second free-form model call cannot be checked against the retrieved
+        # chunks here. Keep the already validated structured answer instead of
+        # exposing an ungrounded rewrite to RAG users.
+        return format_chat_answer_fallback(resolved, raw_answer)
+
     cleaned = format_consumer_text(raw_answer or "")
     prompt = (
         "Rewrite the following astrology reading as one warm, direct chat reply to the user's question. "
