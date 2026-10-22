@@ -42,6 +42,12 @@ ROADMAP_PATH = REPO_ROOT / "docs" / "ROADMAP.md"
 # its guidance is to leave at least a second between POSTs.
 CREATE_PAUSE_S = 1.0
 
+# Reads are retried because flaky networks drop TLS handshakes and connections
+# mid-run. Writes are not: a write whose response was lost may have landed, and
+# the next run's title-prefix matching picks it up instead of duplicating it.
+READ_ATTEMPTS = 3
+RETRY_BACKOFF_S = 2.0
+
 AREA_COLOR = "c5def5"
 LABELS: dict[str, tuple[str, str]] = {
     "area:rag": (AREA_COLOR, "Retrieval, ranking, citations"),
@@ -357,13 +363,19 @@ class GhClient:
             cmd += ["--paginate", "--slurp"]
         if payload is not None:
             cmd += ["--input", "-"]
-        result = subprocess.run(
-            cmd,
-            input=json.dumps(payload) if payload is not None else None,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
+        attempts = READ_ATTEMPTS if method == "GET" else 1
+        for attempt in range(1, attempts + 1):
+            result = subprocess.run(
+                cmd,
+                input=json.dumps(payload) if payload is not None else None,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                break
+            if attempt < attempts:
+                time.sleep(RETRY_BACKOFF_S * attempt)
+        else:
             raise GhError(f"gh api {method} {path} failed: {result.stderr.strip()}")
         data = json.loads(result.stdout) if result.stdout.strip() else None
         if paginate:

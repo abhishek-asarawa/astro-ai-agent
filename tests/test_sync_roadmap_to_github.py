@@ -1,12 +1,16 @@
 """Tests for the ROADMAP.md → GitHub milestones/labels/issues sync."""
 
+import subprocess
 from dataclasses import dataclass, field
 
 import pytest
 
+import scripts.sync_roadmap_to_github as sync_module
 from scripts.sync_roadmap_to_github import (
     LABELS,
     ROADMAP_PATH,
+    GhClient,
+    GhError,
     IssueRef,
     epic_title,
     heading_anchor,
@@ -170,6 +174,38 @@ def test_second_sync_is_a_no_op(roadmap):
     sync(roadmap, gh, repo="owner/repo", apply=True, pause_s=0)
 
     assert gh.writes == writes_after_first
+
+
+def _fake_gh_run(outcomes, calls):
+    """A subprocess.run stand-in that replays (returncode, stdout, stderr) outcomes in order."""
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        code, out, err = outcomes.pop(0)
+        return subprocess.CompletedProcess(cmd, code, stdout=out, stderr=err)
+
+    return run
+
+
+def test_gh_client_retries_reads_on_transient_network_errors(monkeypatch):
+    calls = []
+    outcomes = [(1, "", "net/http: TLS handshake timeout"), (0, '[[{"name": "area:rag"}]]', "")]
+    monkeypatch.setattr(sync_module.subprocess, "run", _fake_gh_run(outcomes, calls))
+    monkeypatch.setattr(sync_module, "RETRY_BACKOFF_S", 0)
+
+    assert GhClient("owner/repo").list_labels() == {"area:rag"}
+    assert len(calls) == 2
+
+
+def test_gh_client_does_not_retry_writes(monkeypatch):
+    calls = []
+    outcomes = [(1, "", "read: connection reset by peer"), (0, '{"number": 1}', "")]
+    monkeypatch.setattr(sync_module.subprocess, "run", _fake_gh_run(outcomes, calls))
+    monkeypatch.setattr(sync_module, "RETRY_BACKOFF_S", 0)
+
+    with pytest.raises(GhError):
+        GhClient("owner/repo").create_milestone("M1 — MVP", "goal")
+    assert len(calls) == 1
 
 
 def test_dry_run_writes_nothing_and_reports_plan(roadmap):
