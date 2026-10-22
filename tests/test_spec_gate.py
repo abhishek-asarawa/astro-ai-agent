@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.devcontainer_support import git_subprocess_env
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "check_spec_gate.sh"
 HOOKS_DIR = REPO_ROOT / ".githooks"
@@ -66,14 +68,14 @@ def test_ci_workflow_has_spec_gate_job():
 
 
 def _git(repo: Path, *args):
-    result = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True)
+    result = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, env=git_subprocess_env())
     assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout
 
 
 def _run_gate(repo: Path, *args, expect_success=None):
     script = repo / "scripts" / "check_spec_gate.sh"
-    result = subprocess.run([str(script), *args], cwd=repo, capture_output=True, text=True)
+    result = subprocess.run([str(script), *args], cwd=repo, capture_output=True, text=True, env=git_subprocess_env())
     if expect_success is not None:
         assert (result.returncode == 0) is expect_success, (
             f"exit={result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}"
@@ -190,3 +192,32 @@ def test_range_mode_passes_when_any_commit_in_range_has_valid_spec_trailer(gate_
 def test_range_mode_passes_trivially_with_no_changes(gate_repo):
     head = _git(gate_repo, "rev-parse", "HEAD").strip()
     _run_gate(gate_repo, "range", head, "HEAD", expect_success=True)
+
+
+@pytest.fixture
+def leaked_git_dir(tmp_path, monkeypatch):
+    """A decoy repo exported via GIT_DIR, as git does when running hooks from a worktree."""
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    subprocess.run(["git", "init", "-q", str(decoy)], check=True, env=git_subprocess_env())
+    monkeypatch.setenv("GIT_DIR", str(decoy / ".git"))
+    return decoy
+
+
+def test_gate_repo_and_gate_ignore_inherited_git_dir(leaked_git_dir, gate_repo):
+    (gate_repo / "README.md").write_text("changed\n")
+    _git(gate_repo, "add", "README.md")
+    msg = _write_msg(gate_repo, "docs: tweak readme\n")
+    _run_gate(gate_repo, "commit-msg", str(msg), expect_success=True)
+
+    def decoy_git(*args):
+        return subprocess.run(
+            ["git", "-C", str(leaked_git_dir), *args],
+            capture_output=True,
+            text=True,
+            env=git_subprocess_env(),
+        )
+
+    assert decoy_git("rev-parse", "--verify", "-q", "HEAD").returncode != 0
+    assert decoy_git("config", "core.bare").stdout.strip() == "false"
+    assert decoy_git("config", "user.email").stdout.strip() == ""

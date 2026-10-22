@@ -4,7 +4,7 @@ Curated product definitions for what the agent should deliver to users.
 
 These are **business** specs: purpose, inputs, required answer content, classical grounding, and success signals. They are not implementation plans.
 
-Engineering backlog and deferred engineering work stay in [docs/FUTURE_IMPROVEMENTS.md](../FUTURE_IMPROVEMENTS.md). Specs here are the product contract when a theme is prioritized.
+Product direction and the order in which themes get built live in [docs/ROADMAP.md](../ROADMAP.md); roadmap steps link to the spec they implement. Engineering backlog and deferred engineering work stay in [docs/FUTURE_IMPROVEMENTS.md](../FUTURE_IMPROVEMENTS.md). Specs here are the product contract when a theme is prioritized.
 
 ## Status legend
 
