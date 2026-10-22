@@ -93,6 +93,7 @@ Append-only. To change a decision, add a new entry that supersedes the old one
 | D10 | 2026-10-20 | **Book licensing: personal-use ingest allowed now; licence status recorded per book; public deployment gated (M6.1).** Licence values: `public-domain`, `licensed`, `owned-personal-use`, `unknown`. | Use the best translations now; make the go-public check mechanical. |
 | D11 | 2026-10-20 | **Guidance policy: answer fully, avoid narrow harms, one hard crisis rule** (table in M1.3). Enforced by a *two-sided* eval: must-answer cases fail on refusal or empty hedging. | Health, longevity, and remedies are core user questions; blanket refusals would kill the product. |
 | D12 | 2026-10-20 | **This file is the single roadmap.** Detail is rolling-wave: the current milestone has fine-grained todos; later milestones are refined at kickoff. | Avoid stale six-months-out detail and drift between docs. |
+| D13 | 2026-10-22 | **No editor-specific agent rule files** (`.cursor/rules/` removed). Agents follow `AGENTS.md` → this roadmap, `docs/standards/`, `docs/specs/`; enforcement is ruff, mypy, pytest, the spec gate, and the git hooks / CI that run them. | One portable source of truth for every agent; rule maps duplicated the standards and could drift. |
 
 ## 5. Milestone overview
 
@@ -639,13 +640,23 @@ sources.
 | Milestone `M1`–`M6` | GitHub **Milestone** (description = goal + exit gate) |
 | Milestone | One **epic issue** `[M1] MVP — epic` with the exit gate as a checklist |
 | Step `M1.3` | **Sub-issue** of the epic, titled `[M1.3] <step title>`, with todos, done-when, depends-on |
-| Existing issues #2–#6 | Attached to M1 as sub-issues of the M1 epic and referenced by M1.1 / M1.2 |
+| Existing issues a step closes (`closes #N` in its todos) | Put in that step's milestone and attached as sub-issues of the step (#6 under M1.1; #2–#5 under M1.2) |
 | Per-book work (M4.3, M4.4) | Sub-issues created at M4 kickoff |
 | Labels | `area:{rag,chart,agent,api,ui,corpus,evals,infra,i18n,safety,docs,llm,storage,knowledge}`, `type:{epic,feature,bug,chore,spec,spike}`, `blocked` |
-| Board | GitHub Project "Astro AI Roadmap" (if available) |
 
-The GitHub issues are generated from this file; when they diverge, **this
-file wins** for scope and order, and the issue wins for todo progress.
+The GitHub milestones, labels, and issues are generated from this file by
+`scripts/sync_roadmap_to_github.py`:
+
+```bash
+python scripts/sync_roadmap_to_github.py            # dry run: print what would change
+python scripts/sync_roadmap_to_github.py --apply    # create what is missing
+```
+
+The sync is re-runnable. It matches existing items by milestone title and
+by the `[M1]` / `[M1.3]` issue-title prefix, creates only what is missing,
+and never rewrites existing issue bodies. So after adding a step here, run
+it again. When the roadmap and the issues diverge, **this file wins** for
+scope and order, and the issue wins for todo progress.
 
 ## 9. Out of scope (parking lot)
 
@@ -659,3 +670,4 @@ voice input, native mobile apps.
 | Date | Change |
 |------|--------|
 | 2026-10-20 | Initial roadmap (M1–M6, decisions D1–D12) |
+| 2026-10-22 | D13: Cursor rules removed; GitHub sync script added; closed-by issues nest under their step |

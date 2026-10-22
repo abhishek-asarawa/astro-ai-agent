@@ -74,6 +74,7 @@ cp .env.example .env
 
 ## Standards & specs (for contributors and agents)
 
+- Product roadmap (milestones, decisions, next steps): [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Coding / comments / testing / config: [`docs/standards/`](docs/standards/)
 - Business feature specs (no code): [`docs/specs/`](docs/specs/)
 - Portable agent entrypoint: [`AGENTS.md`](AGENTS.md)
